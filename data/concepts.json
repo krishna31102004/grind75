@@ -1,0 +1,137 @@
+[
+  {
+    "id": "arrays",
+    "name": "Arrays & Hashing",
+    "display_order": 0,
+    "description": "Membership, counting, and reusable summaries.",
+    "body": "Use a set for membership; a dict or Counter for frequencies or value-to-index lookup. Repeated scans often signal a reusable summary. Avoid hashing when ordering or worst-case guarantees matter. Hash operations are expected O(1); total space is usually O(n). Check duplicates, empty inputs, and whether to look up before inserting.",
+    "prerequisites": "Python iteration and indexing",
+    "template": "seen = set()\nfor value in values:\n    if value in seen:\n        handle_repeat(value)\n    seen.add(value)"
+  },
+  {
+    "id": "two-pointers",
+    "name": "Two Pointers",
+    "display_order": 1,
+    "description": "Maintain an invariant while moving two boundaries.",
+    "body": "Consider two pointers for sorted pairs, partitioning, or opposite-end constraints. State what is already settled outside the pointers. Move a pointer only when its discarded candidates cannot improve the answer. Sorting may change indices and cost O(n log n). Do not use opposite-end elimination without a monotonic argument. Each pointer moving at most n times yields O(n) work.",
+    "prerequisites": "Arrays; sorting",
+    "template": "left, right = 0, len(values) - 1\nwhile left < right:\n    if should_move_left(left, right):\n        left += 1\n    else:\n        right -= 1"
+  },
+  {
+    "id": "sliding-window",
+    "name": "Sliding Window",
+    "display_order": 2,
+    "description": "Reuse information across contiguous ranges.",
+    "body": "Fixed windows remove one item and add one; variable windows expand and shrink while maintaining a measurable condition. A frequency dict tracks multiplicity; a set only tracks membership. Use when valid boundaries move monotonically. Arbitrary negative-sum constraints may break that property. Track whether counts mean missing items or distinct requirements. Two moving boundaries give O(n) work when updates are constant time.",
+    "prerequisites": "Arrays & Hashing; Two Pointers",
+    "template": "left = 0\nfor right, value in enumerate(values):\n    add(value)\n    while invalid():\n        remove(values[left])\n        left += 1\n    record_window(left, right)"
+  },
+  {
+    "id": "stack",
+    "name": "Stacks & Monotonic Stacks",
+    "display_order": 3,
+    "description": "Keep unresolved work in last-in, first-out order.",
+    "body": "Use a stack for nesting, parsing, undo, and unresolved nearest-boundary questions. A monotonic stack removes entries once they can be finalized. Push/pop once gives amortized O(n), even inside a nested loop. A queue instead serves earliest work first. Be precise about equal values, empty pops, operator order, and sentinels.",
+    "prerequisites": "Python lists",
+    "template": "stack = []\nfor item in items:\n    while stack and can_finalize(stack[-1], item):\n        finalize(stack.pop())\n    stack.append(item)"
+  },
+  {
+    "id": "binary-search",
+    "name": "Binary Search",
+    "display_order": 4,
+    "description": "Discard half of an ordered search space.",
+    "body": "Use sorted values or a monotone predicate. Prefer a half-open [lo, hi) boundary template; the unresolved indices are [lo, hi), while the first feasible boundary remains between lo and hi inclusive. When lo equals hi, that boundary is determined. Binary search needs random access and monotonicity, not simply a numeric answer. Each iteration halves the range: O(log n) comparisons, O(1) auxiliary space. Test empty ranges and first/last candidates.",
+    "prerequisites": "Arrays; comparison invariants",
+    "template": "lo, hi = 0, len(values)\nwhile lo < hi:\n    mid = (lo + hi) // 2\n    if feasible(mid):\n        hi = mid\n    else:\n        lo = mid + 1\n# lo is the first feasible position, or len(values)"
+  },
+  {
+    "id": "linked-list",
+    "name": "Linked Lists",
+    "display_order": 5,
+    "description": "Reason about node identity and pointer ownership.",
+    "body": "Use pointer rewiring when random access is unavailable. A dummy node simplifies changes at the head; slow/fast pointers compare traversal speeds. Save a successor before overwriting next. Do not confuse equal values with identical nodes. Traversal costs O(n); index access is also O(n). Watch cycles, one-node lists, shared nodes, and detached chains.",
+    "prerequisites": "References; loops",
+    "template": "dummy = Node()\ntail = dummy\nwhile node is not None:\n    successor = node.next\n    tail.next = node\n    tail = node\n    node = successor"
+  },
+  {
+    "id": "trees",
+    "name": "Trees & Binary Search Trees",
+    "display_order": 6,
+    "description": "Combine subtree answers or visit one level at a time.",
+    "body": "DFS uses O(h) stack space and naturally combines children; BFS uses O(width) space and exposes levels. A BST ordering rule applies to entire subtrees, not only immediate children. Define what recursion returns and the empty-subtree answer. Prefer iteration for very deep trees in Python. A full traversal costs O(n). Height can be n in a skewed tree.",
+    "prerequisites": "Stacks; recursion; queues",
+    "template": "def fold(node):\n    if node is None:\n        return empty_answer\n    left = fold(node.left)\n    right = fold(node.right)\n    return combine(node, left, right)"
+  },
+  {
+    "id": "graphs",
+    "name": "Graphs & Grid Traversal",
+    "display_order": 7,
+    "description": "Explore connections, dependencies, and shortest unweighted paths.",
+    "body": "DFS explores a branch; BFS finds minimum edge count in unweighted graphs. Mark discovered vertices when enqueuing to avoid repeated work. Track all components; directed cycle detection needs active-path state or indegrees. A grid is an implicit graph. Traversals cost O(V+E), or O(rows*cols) for bounded neighbors. Weighted paths need a different algorithm. Check disconnected nodes and mutation permissions.",
+    "prerequisites": "Trees; sets; queues",
+    "template": "from collections import deque\nseen = {start}\nqueue = deque([start])\nwhile queue:\n    node = queue.popleft()\n    for nxt in neighbors(node):\n        if nxt not in seen:\n            seen.add(nxt)\n            queue.append(nxt)"
+  },
+  {
+    "id": "heaps",
+    "name": "Heaps & Priority Queues",
+    "display_order": 8,
+    "description": "Access the next extreme without fully sorting.",
+    "body": "Use a heap for incremental selection, top-k maintenance, or merging sorted streams. Python heapq is a min-heap; negate numeric priorities for a max-heap. Push/pop costs O(log k) for heap size k, heapify O(k). A heap is not globally sorted and arbitrary deletion is costly. Include a tie-breaker when payloads cannot be compared.",
+    "prerequisites": "Arrays; ordering",
+    "template": "import heapq\nheap = []\nfor priority, serial, item in items:\n    heapq.heappush(heap, (priority, serial, item))\npriority, serial, item = heapq.heappop(heap)"
+  },
+  {
+    "id": "intervals",
+    "name": "Intervals",
+    "display_order": 9,
+    "description": "Turn overlap questions into ordered boundary decisions.",
+    "body": "Sort intervals by the boundary required by your proof. Merging uses start order; selecting nonoverlapping work often uses end order. Define whether touching endpoints overlap. Sorting costs O(n log n), then a scan may be linear. Greedy selection fails when arbitrary weights require comparing future profit. Check empty lists and contained intervals.",
+    "prerequisites": "Sorting; binary search for weighted cases",
+    "template": "for start, end in sorted(intervals):\n    if merged and start <= merged[-1][1]:\n        merged[-1][1] = max(merged[-1][1], end)\n    else:\n        merged.append([start, end])"
+  },
+  {
+    "id": "backtracking",
+    "name": "Backtracking & Recursion",
+    "display_order": 10,
+    "description": "Enumerate choices with reversible local state.",
+    "body": "Describe state, legal choices, stopping condition, and how to undo a choice. Use when all combinations or paths are requested; exponential work may be inherent. Prune impossible branches without discarding valid solutions. Copy a path when storing it. Distinguish reuse from one-time choices and distinguish path-local from global visited state. Output storage often dominates complexity.",
+    "prerequisites": "Recursion; sets",
+    "template": "def search(state, path):\n    if complete(state):\n        answers.append(path.copy())\n        return\n    for choice in choices(state):\n        apply(choice)\n        path.append(choice)\n        search(next_state(state, choice), path)\n        path.pop()\n        undo(choice)"
+  },
+  {
+    "id": "dp",
+    "name": "Dynamic Programming",
+    "display_order": 11,
+    "description": "Cache the answers to overlapping subproblems.",
+    "body": "Define a state in one sentence, then list choices and base cases. A transition must depend on smaller or already-computed states. Memoization explores reachable states; tabulation gives control over order and memory. Complexity is number of states times work per state, plus output. Avoid DP when no subproblems repeat. Test unreachable states and empty prefixes; loop direction controls reuse.",
+    "prerequisites": "Recursion; arrays",
+    "template": "dp = [unreachable] * (size + 1)\ndp[0] = base_case\nfor state in range(1, size + 1):\n    for previous in predecessors(state):\n        dp[state] = combine(dp[state], dp[previous])"
+  },
+  {
+    "id": "tries",
+    "name": "Tries",
+    "display_order": 12,
+    "description": "Share prefixes across many string lookups.",
+    "body": "A trie stores one edge per symbol; terminal markers distinguish complete words from prefixes. Insert/search cost O(L) for word length L. It is useful for prefix queries, while a hash set is often simpler for full-word membership. Memory can be large with per-node dictionaries. Test a word that is also another word's prefix.",
+    "prerequisites": "Dictionaries; trees",
+    "template": "node = root\nfor char in word:\n    node = node.children.setdefault(char, TrieNode())\nnode.terminal = True"
+  },
+  {
+    "id": "strings",
+    "name": "Strings & Simulation",
+    "display_order": 13,
+    "description": "Translate a precise specification into a small state machine.",
+    "body": "Track the minimal state required to process the next character or boundary. Separate whitespace, sign, digits, carry, and stopping rules when relevant. Python strings are immutable: repeated prepending can become quadratic; collect characters and join once. Matrix simulation needs explicit boundary invariants. Check empty input, overflow rules, and final carry.",
+    "prerequisites": "Loops; indexing",
+    "template": "output = []\nstate = initial_state\nfor token in tokens:\n    state, emitted = step(state, token)\n    output.extend(emitted)\nanswer = \"\".join(output)"
+  },
+  {
+    "id": "greedy",
+    "name": "Greedy & Counting Invariants",
+    "display_order": 14,
+    "description": "Prove why a local choice preserves a global answer.",
+    "body": "A greedy step needs an exchange or cancellation argument. Counting often identifies a bottleneck or an unavoidable lower bound. Do not use greedy just because a local choice looks good; weighted constraints may require DP. Describe what remains possible after each choice. Confirm assumptions such as an existing majority or a fixed alphabet.",
+    "prerequisites": "Arrays & Hashing; sorting",
+    "template": "state = initial_summary\nfor value in values:\n    state = update_invariant(state, value)\n# Verify any candidate if the problem does not guarantee existence."
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "retrieval_date": "2026-10-15",
+  "reviewer": "A",
+  "inventory_source": "https://raw.githubusercontent.com/yangshun/tech-interview-handbook/main/apps/website/contents/_components/QuestionGroups.json",
+  "targets": "Every canonical URL in data/grind75.json in published grind_rank order",
+  "ordered_urls_sha256": "428898aca99c5ee9a6afd04330239f4e37f4bc751c72cc2d72136b9696185d47",
+  "digest_encoding": "UTF-8 URLs joined with LF plus final LF",
+  "attempted_target_count": 75,
+  "verified_target_count": 75,
+  "failed_targets": [],
+  "title_mismatches": [],
+  "difficulty_mismatches": [],
+  "method": "Independent Reviewer A used web.open on each canonical LeetCode URL and compared visible numbered problem heading and difficulty to creator published inventory.",
+  "difficulty_counts": {
+    "Easy": 23,
+    "Medium": 43,
+    "Hard": 9
+  },
+  "transport_note": "Direct curl received403; independent web content fetches resolved all75. Remote content verification, not browser solve/submission of all75."
+}

@@ -1,0 +1,10 @@
+{% extends 'base.html' %}{% from 'macros.html' import metrics,problem_rows,fields,pace_line with context %}
+{% block body %}<div class="page-heading"><div><p class="eyebrow">{{study_today.strftime('%A, %B %d, %Y')}} · AMERICA/CHICAGO</p><h1>A little practice.<br>A stronger instinct.</h1><p class="lede">Learn a pattern. Make an independent attempt. Keep a small takeaway.</p></div><div class="daily"><strong>{{done}} <span>/ 6</span></strong><span>new questions attempted today</span><small>A flexible target. Reviews count separately.</small></div></div>
+{{metrics(counts)}}{{pace_line(pace,fallback)}}
+<div class="section-heading"><div><p class="eyebrow">FIRST PASS · OCT 15–27</p><h2>Your next questions</h2></div><a class="button quiet" href="{{url_for('main.today',ahead=1)}}">Work ahead +</a></div><p class="subtle">Start with the concept primer, then try the problem before opening its guide.</p>{{problem_rows(items,true)}}
+{% if overflow %}<div class="notice">{{overflow}} more scheduled or overdue questions remain. Your six is a soft target. <a href="/calendar">Inspect the plan</a> or <a href="/?ahead=1">work ahead</a>.</div>{% endif %}
+{% if not items %}<p class="empty">{% if done>=6 %}Daily target reached. Continue if you have energy, or revisit a pattern.{% else %}No unattempted questions scheduled today. You can work ahead.{% endif %}</p>{% endif %}
+{% if ahead %}<h2>Work ahead</h2>{{problem_rows(ahead)}}{% endif %}
+<div class="section-heading"><h2>Due reviews <span class="pill">{{due|length}}</span></h2><a href="/review">Open review queue →</a></div>{{problem_rows(due)}}
+{% if study_today.isoformat()>='2026-10-28' %}<aside class="notice">Revision focus: weak patterns, hinted problems, graph and DP fundamentals. Add a few unseen medium problems outside this 75-question tracker.</aside>{% endif %}
+{% endblock %}
