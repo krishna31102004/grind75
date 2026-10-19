@@ -6,6 +6,7 @@ from app import create_app,services as s
 from app.db import connect,initialize,get_db
 from app.backup import export_data,restore
 from scripts.migrate_to_postgres import migrate,verify,records
+from app.learning_records import migrate as migrate_learning_records
 
 
 @pytest.fixture
@@ -92,4 +93,40 @@ def test_baseline_constraint_pg(pg_url,populated_source):
     with pytest.raises(psycopg.Error):
         with db:db.execute("UPDATE assignments SET baseline_date='2026-10-30' WHERE problem_id='two-sum'")
     assert db.execute("SELECT baseline_date FROM assignments WHERE problem_id='two-sum'").fetchone()[0]=='2026-10-15'
+    db.close()
+
+
+def test_learning_records_pg_migration_backup_and_restart(pg_url,populated_source):
+    source,local=populated_source
+    migrate(source,pg_url,mark_authority=False)
+    app=create_app(dict(local.config,DATABASE_URL=pg_url))
+    with app.app_context():
+        db=get_db();before={t:[dict(r) for r in db.execute(f'SELECT * FROM {t} ORDER BY 1')] for t in ('assignments','progress','problem_notes','activity_events','review_state','review_events')}
+        migrate_learning_records(db)
+        migrate_learning_records(db)
+        db.execute("INSERT INTO learning_records(problem_id,mistakes,corrections,updated_at) VALUES('two-sum','index confusion','check before insert','2026-10-15T18:00:00+00:00')")
+        exported=export_data(db)
+        assert exported['version']==2 and len(exported['tables']['learning_records'])==1
+        assert before=={t:[dict(r) for r in db.execute(f'SELECT * FROM {t} ORDER BY 1')] for t in before}
+        db.execute("UPDATE learning_records SET mistakes='changed' WHERE problem_id='two-sum'")
+        restore(exported)
+        record=db.execute("SELECT mistakes,corrections FROM learning_records WHERE problem_id='two-sum'").fetchone()
+        assert (record['mistakes'],record['corrections'])==('index confusion','check before insert')
+    # The legacy application schema version remains 2; additive feature tables do not block it.
+    restarted=create_app(dict(local.config,DATABASE_URL=pg_url))
+    with restarted.app_context():
+        assert get_db().execute("SELECT mistakes FROM learning_records WHERE problem_id='two-sum'").fetchone()[0]=='index confusion'
+
+
+def test_sqlite_to_postgres_copy_includes_existing_learning_records(pg_url,populated_source):
+    source,app=populated_source
+    from app.learning_records import migrate as migrate_lr
+    with app.app_context():
+        db=get_db();migrate_lr(db)
+        with db:db.execute("INSERT INTO learning_records(problem_id,brute_force,mistakes,updated_at) VALUES('two-sum','try every pair O(n²)','forgot to check before insert','2026-10-15T17:00:00+00:00')")
+    result=migrate(source,pg_url,mark_authority=False)
+    assert result['matched'] and result['source_counts']['learning_records']==1
+    db=connect(pg_url)
+    row=db.execute("SELECT brute_force,mistakes FROM learning_records WHERE problem_id='two-sum'").fetchone()
+    assert row['brute_force']=='try every pair O(n²)' and row['mistakes']=='forgot to check before insert'
     db.close()

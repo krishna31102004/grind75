@@ -3,9 +3,10 @@ import secrets
 from datetime import date, timedelta
 from urllib.parse import urlsplit
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, session, url_for, Response
-from .db import get_db, ROOT
+from .db import get_db, is_postgres, ROOT
 from . import services as s
 from .backup import export_data, restore
+from . import learning_records as lr
 
 bp=Blueprint('main',__name__)
 
@@ -47,7 +48,19 @@ def concepts(cid=None):
 def cheatsheets():
     items=s.rows();q=request.args.get('q','').casefold().strip()
     if q:items=[p for p in items if q in (p['title']+' '+p['concept_name']).casefold()]
-    return render_template('list.html',heading='Cheat Sheets',intro='Concept primers are always available. Problem reasoning opens only after an attempt or an intentional reveal.',items=items,search=True)
+    if request.args.get('personalized')=='1':
+        if not lr.migration_ready(): items=[]
+        else:
+            saved={r[0] for r in get_db().execute('SELECT problem_id FROM learning_records')}
+            items=[p for p in items if p['id'] in saved]
+    if request.args.get('needs_review')=='1':items=[p for p in items if p['next_due_date'] and p['next_due_date']<=s.today().isoformat()]
+    if lr.migration_ready():
+        records={r['problem_id']:dict(r) for r in get_db().execute('SELECT * FROM learning_records')}
+        for p in items:
+            p['learning_record']=records.get(p['id'])
+    else:
+        for p in items:p['learning_record']=None
+    return render_template('list.html',heading='Cheat Sheets',intro='Concept primers are always available. General guides and your personal learning records are kept separate.',items=items,search=True,learning_records_ready=lr.migration_ready())
 
 @bp.route('/problem/<pid>')
 def problem(pid):
@@ -60,7 +73,110 @@ def problem(pid):
         guides=json.loads((ROOT/'data/problem_guides.json').read_text());guide=guides[pid]
     history=[dict(r) for r in get_db().execute('SELECT * FROM activity_events WHERE problem_id=? ORDER BY at DESC,id DESC',(pid,))]
     reviews=[dict(r) for r in get_db().execute('SELECT * FROM review_events WHERE problem_id=? ORDER BY at DESC,id DESC',(pid,))]
-    return render_template('problem.html',p=p,guide=guide,history=history,reviews=reviews)
+    record=lr.get_record(get_db(),pid) if lr.migration_ready() else None
+    return render_template('problem.html',p=p,guide=guide,history=history,reviews=reviews,learning_record=record,learning_records_ready=lr.migration_ready())
+
+def require_learning_records():
+    if not lr.migration_ready():
+        abort(503, description='Personal learning records are not enabled yet. Run the explicit documented database migration.')
+
+
+@bp.route('/learning-records')
+def learning_records():
+    require_learning_records()
+    db=get_db();items=s.rows()
+    records={r['problem_id']:dict(r) for r in db.execute('SELECT * FROM learning_records')}
+    return render_template('learning_records.html',items=items,records=records)
+
+
+@bp.route('/problem/<pid>/learning-record',methods=['POST'])
+def save_learning_record(pid):
+    require_learning_records();db=get_db()
+    if not db.execute('SELECT 1 FROM problems WHERE id=?',(pid,)).fetchone():abort(404)
+    values={field:request.form.get(field,'') for field in lr.FIELDS}
+    for field,value in values.items():
+        if len(value)>lr.MAX_FIELD or '\x00' in value:flash(f'{field} is too long or invalid.','error');return redirect(url_for('main.problem',pid=pid))
+    with db:
+        old=lr.get_record(db,pid)
+        changes=[f for f in lr.FIELDS if (old or {}).get(f,'')!=values[f]]
+        if changes:
+            token=request.form.get('token')
+            if not s.begin(db,token):return redirect(url_for('main.problem',pid=pid))
+            cols=['problem_id',*lr.FIELDS,'updated_at']
+            db.execute(f"INSERT INTO learning_records({','.join(cols)}) VALUES({','.join('?' for _ in cols)}) ON CONFLICT(problem_id) DO UPDATE SET {','.join(f'{f}=excluded.{f}' for f in lr.FIELDS)},updated_at=excluded.updated_at",[pid,*[values[f] for f in lr.FIELDS],s.stamp()])
+            s.event(db,token,pid,'learning_record_edit',{'fields':changes})
+    flash('Personal learning record saved.','success')
+    return redirect(url_for('main.problem',pid=pid))
+
+
+@bp.route('/learning-records/import',methods=['GET','POST'])
+def learning_records_import():
+    require_learning_records();db=get_db()
+    if request.method=='POST' and request.form.get('action')=='parse':
+        upload=request.files.get('file')
+        if upload and upload.filename and not upload.filename.lower().endswith('.json'):
+            flash('Choose a .json file or paste JSON text.','error')
+            sample={'format':lr.FORMAT,'version':lr.VERSION,'records':[{'problem_id':'two-sum',**{field:'' for field in lr.FIELDS}}]}
+            return render_template('learning_import.html',sample=json.dumps(sample,ensure_ascii=False,indent=2),json_text=request.form.get('json',''))
+        raw=upload.read(lr.MAX_BYTES+1) if upload and upload.filename else request.form.get('json','').encode('utf-8')
+        try:
+            incoming=lr.parse(raw,db)
+            with db:
+                preview_token=lr.preview_token(db,incoming)
+            return render_template('learning_import_preview.html',preview_token=preview_token,entries=lr.preview(db,incoming),incoming=incoming,stale=False)
+        except ValueError as exc:
+            flash(str(exc)+(' The uploaded file must be selected again.' if upload and upload.filename else ''),'error')
+    if request.method=='POST' and request.form.get('action')=='confirm':
+        token=request.form.get('preview_token','')
+        with db:
+            # SQLite deferred transactions allow a second writer to alter a record
+            # after our snapshot check but before apply(). Lock before every read
+            # so preview validation and its merge are one serialized operation.
+            if not is_postgres(db):db.execute('BEGIN IMMEDIATE')
+            stored=lr.load_preview(db,token)
+            if not stored:
+                flash('This preview expired. Import the JSON again.','error')
+                return redirect(url_for('main.learning_records_import'))
+            incoming=json.loads(stored['payload'])
+            current=lr.snapshot(db,incoming)
+            if current!=stored['snapshot_hash']:
+                refreshed=lr.preview_token(db,incoming)
+                db.execute('DELETE FROM learning_import_previews WHERE token_hash=?',(stored['token_hash'],))
+                return render_template('learning_import_preview.html',preview_token=refreshed,entries=lr.preview(db,incoming),incoming=incoming,stale=True)
+            skipped=set(request.form.getlist('skip'))
+            replace_fields={}
+            for item in incoming['records']:
+                replace_fields[item['problem_id']]=set(request.form.getlist('replace_'+item['problem_id']))
+            changed=lr.apply(db,incoming,replace_fields,skipped)
+            db.execute('DELETE FROM learning_import_previews WHERE token_hash=?',(stored['token_hash'],))
+        flash(f'Import complete. {len(changed)} personalized record(s) changed; progress and review states were untouched.','success')
+        return redirect(url_for('main.learning_records'))
+    sample={'format':lr.FORMAT,'version':lr.VERSION,'records':[{'problem_id':'two-sum',**{field:'' for field in lr.FIELDS}}]}
+    return render_template('learning_import.html',sample=json.dumps(sample,ensure_ascii=False,indent=2),json_text=request.form.get('json',''))
+
+
+@bp.route('/learning-records/export')
+def learning_records_export():
+    require_learning_records()
+    selected=request.args.get('selected')=='1'
+    ids=request.args.getlist('problem_id')
+    if selected and not ids:
+        flash('Select at least one record to export, or use Export all records.','error')
+        return redirect(url_for('main.learning_records'))
+    ids=ids or None
+    if ids and any(not get_db().execute('SELECT 1 FROM problems WHERE id=?',(pid,)).fetchone() for pid in ids):abort(400)
+    payload=lr.export(get_db(),ids)
+    if ids:payload['records']=[r for r in payload['records'] if r['problem_id'] in ids]
+    filename='grind75-learning-records-'+s.today().isoformat()+'.json'
+    return Response(json.dumps(payload,ensure_ascii=False,indent=2),mimetype='application/json',headers={'Content-Disposition':f'attachment; filename={filename}'})
+
+
+@bp.route('/review/<pid>')
+def personalized_review(pid):
+    if not lr.migration_ready():abort(404)
+    p=next((p for p in s.rows() if p['id']==pid),None)
+    if p is None:abort(404)
+    return render_template('personalized_review.html',p=p,record=lr.get_record(get_db(),pid))
 
 @bp.route('/problem/<pid>/<action>',methods=['POST'])
 def update(pid,action):
@@ -107,6 +223,13 @@ def reviews():
     due=[p for p in items if p['next_due_date'] and p['next_due_date']<=day]
     weak=[p for p in items if p['first_attempt_at'] and (p['status'] in ('hints','needs_review') or (p['confidence'] and p['confidence']<=2)) and p not in due]
     future=[p for p in items if p['next_due_date'] and p['next_due_date']>day and p not in weak]
+    if lr.migration_ready():
+        saved={r[0] for r in get_db().execute('SELECT problem_id FROM learning_records')}
+        for group in (due,weak,future):
+            for p in group:p['has_learning_record']=p['id'] in saved
+    else:
+        for group in (due,weak,future):
+            for p in group:p['has_learning_record']=False
     return render_template('review.html',due=due,weak=weak,future=future)
 
 @bp.route('/calendar')

@@ -162,4 +162,6 @@ def activity_description(event_row):
     if kind=='review_schedule':return 'Review scheduled: '+str(payload.get('date',''))
     if kind=='catch_up':return 'Catch-up schedule saved'
     if kind=='concept_note':return 'Concept note saved'
+    if kind in ('learning_record_edit','learning_record_import'):
+        return 'Personal learning record saved ('+', '.join(payload.get('fields',[]))+')'
     return 'Study activity saved'

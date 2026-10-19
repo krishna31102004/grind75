@@ -112,3 +112,61 @@ Final independent preparation gates: **A passed** (101 PostgreSQL-enabled tests,
 ## Completed handoff
 
 Application commit `00e31d5f7307ad47e4d3dcf23838f18652c2860a` was pushed normally to existing `https://github.com/krishna31102004/grind75` main and verified through both git ls-remote and GitHub's commit API. No force push, new repository, cloud resource or deployment. The final documentation-only handoff commit records this verification. Working application verification:102 tests passed in7.87s with isolated local PostgreSQL enabled; official schema validation passed. Both reviewers passed, with the final WSGI regression isolated from real `.env.local` loading as A requested. User's remaining actions are Neon setup, private environment configuration, explicit source migration/verification, and Vercel deployment/post-deployment checks documented in VERCEL_DEPLOYMENT.md.
+
+## Personalized learning records upgrade — October19,2026
+
+Baseline: clean `main` at `a8fb4bd7e62345e4c79590fc108ea106e87d7b6d`; work is on `codex/personalized-learning-records`. The local SQLite file and its verified pre-cloud backup both remain integrity-clean; backup SHA-256 still matches the prior recorded value. No local or cloud study data has been changed for this feature.
+
+### Checklist — implementation checkpoint
+
+- [x] Additive, explicit SQLite/PostgreSQL schema migration; preserve current app startup and production compatibility.
+- [x] Per-problem structured personal learning records and authenticated editor.
+- [x] Versioned JSON import with strict validation, preview, conflict controls, stale-preview checks, and atomic writes.
+- [x] One/group/all learning-record exports; no status/mastery changes.
+- [x] Spoiler-safe personalized review recall/reveal; cheat-sheet filters and navigation.
+- [x] Full-backup compatibility and restore preservation for older/newer versions.
+- [x] Regression tests against isolated SQLite and disposable PostgreSQL.
+- [x] Final independent A/B reviews completed for the repaired checkpoint; blocking and important findings resolved.
+- [ ] Production Neon schema migration, promotion, and hosted checks remain gated on a private verified full Neon backup and a separately coordinated production migration; none were attempted in this implementation checkpoint.
+
+### Latest verification — October19,2026
+
+- Latest complete automated suite with `TEST_DATABASE_URL` pointed only at a disposable local PostgreSQL14 cluster: **123 passed in11.30s**, no failures or skips.
+- Vercel root configuration validated with `scripts/check_vercel_config.py` against the live official schema.
+- Independently exercised `scripts/migrate_learning_records.py --sqlite` against a fresh temporary SQLite database. It applied version3, retained all75 questions, preserved all original table digests, produced a mode-600 safety copy, and the source and copy both passed SQLite integrity checking.
+- Main-agent browser walkthrough used only a temporary SQLite database and test credentials on127.0.0.1:5011. Verified the Today/review and personal-record list; imported a synthetic two-problem batch, preserved conflict fields without selecting replacements, saved a new recognition clue, and saw the explicit success message that study progress/reviews were untouched. Recall question appeared before mistakes/corrections; the latter remained collapsed until clicked, then displayed. The earlier checkpoint also verified import paste/preview, personalized filter, and separated problem editor.
+- Database backup check was read-only: original pre-cloud backup still has SHA-256 `d3c90f287b9c069ac874c0859ae476b3157532ae2fba25f58ebc44862fb238fc`, matching the recorded value. Both personal database and backup remain ignored and untracked; neither was used for tests or migration.
+- First standalone SQLite migration harness attempt failed because the app inherited local cloud configuration and therefore did not initialize a SQLite file. The harness was corrected to use the testing app configuration and an explicit temporary path; the rerun passed as reported above. No project defect was involved.
+- Final Reviewer A testing exposed a real SQLite concurrent-edit race during import confirmation. Fixed by beginning `BEGIN IMMEDIATE` before reading the import token/snapshot; a two-connection interleaving regression now verifies the writer is blocked until confirmation commits and that its later edit is preserved. Added an automated test that preview issuance prunes expired tokens while retaining live tokens. Focused regression checks passed3/3; the final complete SQLite/PostgreSQL suite passed123/123.
+- Final Reviewer A: no remaining P0/P1 findings. Migration, backup v1/v2 compatibility, restartability and data-copy checks passed; reviewer recommended making the concurrent-writer test assert it was blocked. That assertion is now present and the full suite was rerun successfully.
+- Final Reviewer B: login, Today, manual learning-record edits, six-record import/conflict/skip/replace, malformed JSON retention, personal filters/search, recall/reveal, Calendar, Concepts, sharing enable/revoke, anonymous shared HTML/JSON, and narrow-layout checks passed. B's P2 unnamed-textarea finding was fixed with explicit label/ID pairs for all nine fields and rechecked in a fresh browser session; the expanded control now exposes its accessible name. Browser download was blocked by the browser client (`ERR_BLOCKED_BY_CLIENT`) and file upload was not exercised in-browser; API tests cover exports and paste/import validation.
+- `.gitignore` excludes `.env.local`, `instance/` (including SQLite, backups, and runtime state), Python caches, and environments. Nothing from those paths is tracked.
+- `git diff --check` passes. No production deployment, real Neon write, Vercel migration, or Git push was performed.
+
+### Historical baseline review status (superseded by the final reviews above)
+
+- Reviewer A (`gpt-6-luna`, medium) independently reviewed schema, PostgreSQL adapter/migration, backup v1, and transaction conventions; identified the integration points and no baseline blockers. Detailed feature review pending stable checkpoint.
+- Reviewer B (`gpt-6-luna`, medium) returned the UI acceptance checklist: separate personal vs generic guide, paste/file parity, preserve-nonempty conflict defaults, stale preview rejection, distinct exports, explicit revision reveal, spoiler/privacy boundary, and responsive review. Browser review pending isolated feature checkpoint.
+
+- The earlier statements above about pending feature reviews and unrun acceptance tests describe the initial implementation checkpoint only; they were superseded by the completed 123-test/reviewer verification recorded above.
+- Production Neon schema and Vercel deployment have not been modified.
+
+## Release-readiness correction — October19,2026
+
+- Corrected the explicit v3 schema migration and original SQLite-to-PostgreSQL operations CLI to require `DATABASE_URL_UNPOOLED`, validate a direct Neon endpoint and remote TLS, and accept values only from the process environment or a private dotenv file. The Flask/Vercel runtime remains on pooled `DATABASE_URL`.
+- Added `scripts/backup_neon.py`: it runs a read-only target/TLS/PostgreSQL-client-version preflight, creates a custom-format dump with `pg_dump`, keeps the URL out of process arguments, applies mode700 directory/mode600 file permissions, and verifies a nonempty archive with `pg_restore --list`.
+- The intended production Neon endpoint, server version, TLS handshake, and backup-role permissions have not been remotely verified because no Neon credentials or database connection were available. Current local PostgreSQL client tools are14.19. `--check-postgres` must be run privately and its sanitized host/database compared against the intended Neon Production project/branch before any migration approval.
+- Migration v3 is additive: it creates `learning_records`, `learning_import_previews`, and `feature_migrations` and does not alter base schema version2 or existing tables, so the deployed app remains compatible while new code is held back.
+- Added direct-URL selection, pooler rejection, explicit TLS requirement, sanitized PostgreSQL tool-version parsing, and parsed libpq-environment regression tests. The original release test found Homebrew version parsing and `PGDATABASE` URI handling defects; both were fixed. Reviewer A then found and helped close a TLS downgrade gap by requiring explicit remote `sslmode`.
+- Full end-to-end operations rehearsal used only a disposable PostgreSQL14 cluster: seeded an isolated version2 database, created a mode-600 custom-format dump in a mode-700 directory, verified the archive listing, restored the full dump into a scratch database, ran migration v3, verified v2+v3 schema, and confirmed the pre-feature Flask app still served HTTP200 with all75 questions after v3. Synthetic direct and pooled credential strings were absent from output. No Neon connection was used.
+- Manual browser file-upload and JSON-download workflow now passes using an isolated temporary SQLite database and test credentials: uploaded synthetic JSON, reviewed/confirmed the import, downloaded the export, and compared its contents. This closes the previous browser-check gap.
+- Final complete automated suite with a fresh disposable UTF-8 PostgreSQL14 cluster: **132 passed in9.81s**, no failures or skips. No PostgreSQL connection used any real or cloud data.
+- Reviewer A final independent pass: **PASS, no remaining P0/P1/P2**. Reviewer independently reran the full disposable-PostgreSQL suite (**132 passed**) and confirmed diff cleanliness, explicit TLS, secret-safe direct URL handling, backup procedure, and the version2 compatibility gate.
+- No production database was queried or changed, no database was reset, and no deployment or Git push was performed. Work stops before the production migration approval gate.
+
+## Neon preflight TLS proxy correction — October19,2026
+
+- Traced the reported generic preflight error to the exact branch: PostgreSQL connection and metadata query succeeded, but `inspect_postgres()` rejected `pg_stat_ssl.ssl=false` for a remote host; the catch handler then hid the reason behind a generic redacted RuntimeError. This server-side view can differ when TLS terminates at Neon’s connection proxy.
+- Replaced the server-view check with libpq’s client-side `PGconn.ssl_in_use`, retained the required direct Neon endpoint and explicit TLS mode, and added safe diagnostic categories (`connection`, `metadata`, `tls`, `client-version`) that never include connection details.
+- Added regression tests for client TLS state and redaction, including acceptance when client TLS is active regardless of any server-side SSL view.
+- An isolated TLS-enabled PostgreSQL CLI preflight reported `tls=on`; a synthetic credential was absent from stdout/stderr. The full test suite against disposable PostgreSQL14 passed **136/136**. No production backup, query via operator URL, migration, deployment, or Git push was run.

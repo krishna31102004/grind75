@@ -14,13 +14,19 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from app.db import ROOT, USER_TABLES, connect, initialize
 from app.backup import validate
+from app.learning_records import migrate as migrate_learning_records
+from scripts.migrate_learning_records import direct_database_url
 from dotenv import load_dotenv
 
-TABLES=('settings','concepts','problems',*USER_TABLES)
+BASE_TABLES=('settings','concepts','problems',*USER_TABLES)
+LEARNING_TABLE='learning_records'
 
 
-def records(db):
-    return {t:sorted([dict(r) for r in db.execute(f'SELECT * FROM {t}')],key=lambda r:str(next(iter(r.values())))) for t in TABLES}
+def records(db,tables=None):
+    if tables is None:
+        present={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")} if not getattr(db,'backend',None) else {r[0] for r in db.execute('SELECT tablename FROM pg_tables WHERE schemaname=current_schema()')}
+        tables=BASE_TABLES+((LEARNING_TABLE,) if LEARNING_TABLE in present else ())
+    return {t:sorted([dict(r) for r in db.execute(f'SELECT * FROM {t}')],key=lambda r:str(next(iter(r.values())))) for t in tables}
 
 
 def digest(data):
@@ -41,15 +47,22 @@ def source_data(path,backup=True):
         canonical=connect(':memory:')
         try:
             initialize(canonical)
-            for table in TABLES:
+            tables=tuple(BASE_TABLES)+(('learning_records',) if snapshot.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='learning_records'").fetchone() else ())
+            for table in tables:
                 expected={row[1] for row in canonical.execute(f'PRAGMA table_info({table})')}
+                if table=='learning_records':
+                    from app.learning_records import migrate as migrate_sqlite_learning_records
+                    migrate_sqlite_learning_records(canonical)
+                    expected={row[1] for row in canonical.execute(f'PRAGMA table_info({table})')}
                 actual={row[1] for row in snapshot.execute(f'PRAGMA table_info({table})')}
                 if actual!=expected:raise ValueError('Source schema differs from supported schema; no destination changes made.')
+            data=records(snapshot,tables)
         finally:canonical.close()
         seed=json.loads((ROOT/'data/grind75.json').read_text())
         if {r['id'] for r in data['problems']}!={p['id'] for p in seed}:raise ValueError('Source must contain the frozen75 problem identities.')
         version=next((r['value'] for r in data['settings'] if r['key']=='seed_version'),None)
-        payload=dict(format='grind75-backup',version=1,seed_version=version,exported_at=datetime.now(timezone.utc).isoformat(),tables={t:data[t] for t in USER_TABLES})
+        user_tables=USER_TABLES+(('learning_records',) if 'learning_records' in data else ())
+        payload=dict(format='grind75-backup',version=2 if 'learning_records' in data else 1,seed_version=version,exported_at=datetime.now(timezone.utc).isoformat(),tables={t:data[t] for t in user_tables})
         validate(payload)
         if backup:
             directory=path.parent/'backups';directory.mkdir(exist_ok=True)
@@ -65,14 +78,15 @@ def source_data(path,backup=True):
 
 
 def comparison(source,destination):
-    mismatched=[t for t in TABLES if source[t]!=destination[t]]
-    return dict(matched=not mismatched,mismatched_tables=mismatched,source_digest=digest(source),destination_digest=digest(destination),source_counts={t:len(source[t]) for t in TABLES},destination_counts={t:len(destination[t]) for t in TABLES})
+    tables=tuple(source)
+    mismatched=[t for t in tables if source[t]!=destination[t]]
+    return dict(matched=not mismatched,mismatched_tables=mismatched,source_digest=digest(source),destination_digest=digest({t:destination[t] for t in tables}),source_counts={t:len(source[t]) for t in tables},destination_counts={t:len(destination[t]) for t in tables})
 
 
 def verify(sqlite_path,url):
     source=source_data(sqlite_path,backup=False);db=connect(url)
     try:
-        with db:return comparison(source,records(db))
+        with db:return comparison(source,records(db,tuple(source)))
     finally:db.close()
 
 
@@ -81,19 +95,21 @@ def migrate(sqlite_path,url,mark_authority=True):
     try:
         with db:
             initialize(db)
+            tables=tuple(source)
+            if 'learning_records' in tables:migrate_learning_records(db)
             prior=db.execute("SELECT value FROM app_meta WHERE key='migration_digest'").fetchone()
             if prior:
                 if prior[0]!=source_digest:raise ValueError('This destination was migrated from different source data. Refusing to overwrite cloud progress.')
-                result=comparison(source,records(db));result['status']='already_migrated'
+                result=comparison(source,records(db,tables));result['status']='already_migrated'
                 # Cloud progress may have advanced: retry is deliberately a no-op.
             else:
-                if any(db.execute(f'SELECT count(*) FROM {t}').fetchone()[0] for t in TABLES):
+                if any(db.execute(f'SELECT count(*) FROM {t}').fetchone()[0] for t in tables):
                     raise ValueError('Destination contains data. Refusing to overwrite it; use an empty dedicated database.')
-                for table in TABLES:
+                for table in tables:
                     for row in source[table]:
                         keys=list(row)
                         db.execute(f"INSERT INTO {table} ({','.join(keys)}) VALUES ({','.join('?' for _ in keys)})",[row[k] for k in keys])
-                result=comparison(source,records(db))
+                result=comparison(source,records(db,tables))
                 if not result['matched']:raise ValueError('Record verification failed; migration rolled back.')
                 # Abort if the original changed while the copy was being applied.
                 if digest(source_data(sqlite_path,backup=False))!=source_digest:raise ValueError('Source changed during migration. Stop local writes and retry; destination rolled back.')
@@ -126,8 +142,8 @@ def main():
     parser.add_argument('--env-file',type=Path,default=ROOT/'.env.local')
     args=parser.parse_args()
     load_dotenv(args.env_file,override=False)
-    url=os.environ.get('DATABASE_URL','')
-    if not url.startswith(('postgresql://','postgres://')):parser.error('Set DATABASE_URL privately in the chosen env file or environment.')
+    try:url,_=direct_database_url()
+    except ValueError as exc:parser.error(str(exc))
     if args.action!='seed-empty' and not args.sqlite:parser.error('--sqlite is required for migration/verification.')
     try:
         result=seed_empty(url) if args.action=='seed-empty' else (migrate(args.sqlite,url) if args.action=='migrate' else verify(args.sqlite,url))

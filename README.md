@@ -49,3 +49,13 @@ Tests use temporary SQLite files. With `TEST_DATABASE_URL` set to a **disposable
 [Dataset provenance](data/SOURCES.md) records the creator-published75 selection and October15 remote checks. Rebuild frozen content offline with `scripts/build_seed.py` and `scripts/author_guides.py`; this does not reset personal progress. The original [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) documents the initial local scope; the later deployment preparation is recorded in AGENTS.md and the deployment guide.
 
 No AI tutor, code runner, grading, paid API, frontend framework rewrite, timer or shortcuts were added. Learning status is self-reported. Actual Neon/Vercel production connectivity and redeployment persistence must be verified after you deploy.
+
+## Personal Learning Records
+
+After explicit schema migration version3, each problem has a separate **My Learning Record** for your brute-force explanation, optimized reasoning, complexity, recognition clue, actual mistakes, corrections, edge cases, interview takeaway and recall question. Editing or importing these records does not change status, mastery, assignments or review scheduling.
+
+Use **Cheat Sheets → My Learning Records → Import a ChatGPT batch** to paste or upload version1 JSON. Review every matched problem before confirming. Existing nonempty fields stay unless you select a particular replacement; imported empty strings never clear saved values. The batch limit is12 records/256 KiB and8,000 characters per field. Export one, selected or all personal records in the same format. Full application backup/restore is a separate workflow.
+
+Personal records require authentication and are excluded from public Study Context sharing. Review pages show your recall question first and hide mistakes/corrections behind an explicit reveal. Full backups become version2 after migration; old version1 backups remain restorable without deleting current learning records.
+
+The additive SQLite/PostgreSQL migration is explicit; startup and Vercel builds never apply it. Follow [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md#personal-learning-records-schema-migration). Do not migrate production until a private, verified full database backup exists.

@@ -1,6 +1,6 @@
 # Deploy Grind 75 to Vercel with Neon
 
-Prepared October 16, 2026. **No Vercel project, cloud database, or deployment was created by this implementation.** You perform the steps below. Existing UI,75-question inventory, learning content, schedules and tracking remain intact.
+Updated October 19, 2026. **No Vercel project, cloud database, production migration, or deployment was created by this implementation.** You perform the steps below. Existing UI,75-question inventory, learning content, schedules and tracking remain intact.
 
 ## 1. Prepare credentials on this Mac
 
@@ -22,7 +22,7 @@ For local authenticated access, copy the three generated entries into ignored `.
 
 In the Vercel dashboard, use the team's **Storage** area or the [Neon Marketplace integration](https://vercel.com/marketplace/neon). Create a dedicated database or connect an existing Neon resource. Choose a free plan if offered, with a region near the Vercel function region; stop if the available path requires a paid upgrade you do not want. Plan availability and limits are provider-controlled.
 
-Copy the **pooled PostgreSQL connection string**, including its TLS options, into `DATABASE_URL` in ignored `.env.local`. The hostname normally includes `-pooler`. Remote connections require `sslmode=require` or stronger. Never use a browser-visible/public variable prefix. Do not use the local test server's URL in Vercel.
+Copy the **pooled PostgreSQL connection string**, including its TLS options, into `DATABASE_URL` in ignored `.env.local`. The hostname normally includes `-pooler`. Remote connections require `sslmode=require` or stronger. Keep this pooled variable for Flask/Vercel runtime. Also store Neon's **direct/unpooled connection string** as `DATABASE_URL_UNPOOLED` in the ignored local `.env.local` for operator-run backup and migration commands only. It normally omits `-pooler`; keep it private and do not add it to Vercel. Neon's [connection-pooling guidance](https://neon.com/docs/connect/connection-pooling) recommends direct connections for schema migrations and `pg_dump`/`pg_restore`, which require session-level behavior unsupported by the pooler. Never use a browser-visible/public variable prefix. Do not use the local test server's URL in Vercel.
 
 You can create the Storage resource before importing GitHub, then connect it to the project after that project exists. If you instead create the Vercel project first, an initial deployment without required variables fails safely; configure the resource and credentials, migrate, then redeploy.
 
@@ -34,7 +34,7 @@ When connecting Storage → database → **Connect Project**, select the correct
 
 1. Stop every running local tracker with Control-C. Keep it stopped until cutover is verified, so no old process can continue writing SQLite.
 2. Retain `instance/tracker.sqlite3` and the timestamped backup in `instance/backups/`. The migration also makes another verified SQLite safety copy.
-3. Verify `.env.local` points to the **empty, dedicated production Neon database**. Also put the generated login entries there for subsequent local use.
+3. Verify `DATABASE_URL_UNPOOLED` in `.env.local` points to the **empty, dedicated production Neon database**. Also put the generated login entries there for subsequent local use. The one-time migration/verification CLI requires this direct URL; it does not use the pooled runtime URL.
 4. Run:
 
 ```sh
@@ -42,19 +42,19 @@ When connecting Storage → database → **Connect Project**, select the correct
 .venv/bin/python scripts/migrate_to_postgres.py verify --sqlite instance/tracker.sqlite3 --env-file .env.local
 ```
 
-The first command must report `status: migrated_and_verified`, `matched: true`, equal source/destination digests and equal counts in all11 original application tables. The verify command must report `matched: true`, no mismatched tables, and exit0. **Do this before making any new study edits in PostgreSQL.** Counts and hashes alone are not the internal check: the script compares every field in every row, including notes, timestamps, settings, concept metadata, baseline/manual assignment dates, attempts, reviews and mastery.
+The migration command must report `status: migrated_and_verified`, `matched: true`, equal source/destination digests and equal counts in all11 original application tables. The verify command must report `matched: true`, no mismatched tables, and exit0. **Do this before making any new study edits in PostgreSQL.** Counts and hashes alone are not the internal check: the script compares every field in every row, including notes, timestamps, settings, concept metadata, baseline/manual assignment dates, attempts, reviews and mastery.
 
 The source is opened read-only. PostgreSQL schema creation, inserts and verification run in one transaction under an advisory lock. Failure rolls back. Existing unrelated/nonempty destinations are refused. An unchanged-source retry is a no-op; if cloud progress has advanced, it reports `already_migrated` and `matched: false` without overwriting it. A different source digest is refused. After successful migration, `instance/cloud-authority.json` prevents the original local database silently becoming a competing history.
 
 After cutover, **PostgreSQL is authoritative**. `./run.sh` reads `.env.local` and uses the same PostgreSQL database after authentication. Without the required URL, the cutover marker blocks use of that SQLite file. You may explicitly select a *different* file with `TRACKER_DATABASE` for isolated offline experiments; those experiments are not synchronized. Do not remove the authority marker merely to resume writing the old database.
 
-For a fresh **preview** installation with no personal data, create an ignored `.env.preview.local` containing only that preview's URL and run:
+For a fresh **preview** installation with no personal data, create an ignored `.env.preview.local` containing that preview's direct URL under `DATABASE_URL_UNPOOLED` and run:
 
 ```sh
 .venv/bin/python scripts/migrate_to_postgres.py seed-empty --env-file .env.preview.local
 ```
 
-Do **not** use `seed-empty` in place of migrating your existing production progress. For an already-migrated preview, redeployments need no seeding. Future schema upgrades require reviewed explicit migration commands; this release uses schema version2.
+Do **not** use `seed-empty` in place of migrating your existing production progress. For an already-migrated preview, redeployments need no seeding. Future schema upgrades require reviewed explicit migration commands. The deployed base schema is version2; the new learning-record feature adds explicit migration version3.
 
 ## 4. Import the exact GitHub repository
 
@@ -82,6 +82,7 @@ Set the required variables **before the final deployment**, with the environment
 | Name | Purpose | Required? | Obtain/generate | Environments |
 |---|---|---|---|---|
 | `DATABASE_URL` | Authoritative PostgreSQL connection | Required for every Vercel deployment | Neon pooled URL with TLS; Marketplace may inject it | Production; separate isolated value for Preview; local Development only if intentionally connecting |
+| `DATABASE_URL_UNPOOLED` | Direct connection for operator-run dumps and migrations | Required only for manual database operations | Neon direct/unpooled URL with TLS, kept in ignored local `.env.local`; never paste into shell command arguments | Local operator shell only; never Vercel runtime |
 | `SECRET_KEY` | Signs12-hour Flask sessions | Required when auth is enabled | `scripts/setup_admin.py` generates a random secret | Production; different secret for Preview; local `.env.local` for authenticated access |
 | `ADMIN_PASSWORD_HASH` | Verifies administrator password without storing plaintext | Required when auth is enabled | Generated scrypt hash in `instance/admin-credentials.env` | Production; separate preview credentials; local `.env.local` |
 | `ADMIN_USERNAME` | Login name | Optional; defaults to `admin` | Username chosen by setup command | Match credentials in each applicable environment |
@@ -129,9 +130,80 @@ Use disposable records in an isolated preview first. Production study changes sh
 
 The original SQLite and all local backups remain ignored. Export study JSON periodically and store it privately. In PostgreSQL, restoring a validated JSON file creates a durable `safety_backups` row in the same transaction before replacing study rows. The authenticated Backup page offers its download. SQLite mode saves safety JSON files beside the database under `backups/`. Credential/share-token/throttle tables are intentionally excluded from study exports/restores. Study settings are preserved during initial migration; the existing JSON format covers assignments/progress/notes/activity/reviews and does not replace configuration settings.
 
-For a complete infrastructure backup, use Neon's backup/branch tools or `pg_dump` to a private destination. Avoid paid upgrades unless deliberately approved. A study JSON export is not a substitute for a full database backup of configuration/security state.
+For a complete infrastructure backup, use Neon's backup/branch tools or the direct-URL procedure below to `pg_dump` into a private destination. Avoid paid upgrades unless deliberately approved. A study JSON export is not a substitute for a full database backup of configuration/security state.
 
 For code updates, push a reviewed commit to `main`, let your connected Vercel project deploy, and repeat the verification checklist. Startup/redeployment never migrates or reseeds PostgreSQL. Database migration is a separate manual operation; rolling back code does not roll back schema or study data.
+
+## Personal Learning Records schema migration
+
+The personalized-record feature uses additive migration version3. Neither Flask startup nor Vercel builds run it. The app checks the migration marker and keeps the original workflow available until it exists. It adds `learning_records`, expiring server-side import previews, and `feature_migrations`; it leaves the base schema version2 unchanged so the currently deployed code can ignore the new tables during preparation.
+
+**Current production status (October19,2026):** the owner reports the private Neon backup was created and its archive listing verified, migration version3 completed with all original study-table digests matching, and independent verification confirmed base schema version2 plus feature migration version3 with `learning_records=0`. The production Neon server and both PostgreSQL client tools were verified at version18.6, and the direct endpoint/TLS preflight succeeded. This is the completed one-time production result; **do not rerun either the original SQLite-to-Neon migration or the version3 migration against this production database.** The procedure below is retained for recovery/reference and isolated non-production environments.
+
+For a local SQLite file, stop the tracker and keep a verified backup. The command makes another mode-600 SQLite safety copy before applying DDL, then compares every original study-table digest before and after:
+
+```sh
+.venv/bin/python scripts/migrate_learning_records.py --sqlite instance/tracker.sqlite3
+```
+
+For Neon production, run this **before promoting the new code to `main`**, so the current app continues to work while the additive schema is prepared. The migration adds only new tables and does not alter or drop anything read by the currently deployed version2 app. The old app can continue serving reads through its existing pooled `DATABASE_URL`; pause study writes during the brief migration/digest verification window so concurrent progress edits do not make the before/after integrity comparison fail. Verify in Neon's dashboard that the operator URL points to the same production project, branch/endpoint, and database currently used by the Vercel project's `DATABASE_URL`; do not rely on a copied label alone. The actual target and server version have not been inspected in this environment because no Neon credentials were supplied.
+
+Keep both URLs in the ignored local `.env.local`: pooled runtime `DATABASE_URL` and direct operations-only `DATABASE_URL_UNPOOLED`. The following preflight connects read-only, prints only host/database/server version/TLS/client versions (never credentials), rejects a Neon pooler endpoint, verifies TLS from libpq's client-side socket status (not the server's `pg_stat_ssl` view, which may not describe TLS terminated at a Neon proxy), and refuses PostgreSQL client tools older than the server:
+
+```sh
+.venv/bin/python scripts/migrate_learning_records.py --check-postgres --env-file .env.local
+```
+
+For a future non-production target, compare the sanitized host and database with the intended Neon branch/database. Confirm `pg_dump` is the same major as or newer than the server and `pg_restore` matches that client major; PostgreSQL documents that `pg_dump` refuses to dump from a newer server major than itself in its [`pg_dump` compatibility notes](https://www.postgresql.org/docs/current/app-pgdump.html). For the completed production operation, the owner confirmed Neon and both client tools were version18.6. `sslmode=require` encrypts the connection; `verify-ca` or `verify-full` additionally verifies the server certificate. Neon-provided URL settings should be retained. The backup role must be able to read every schema/table and sequence included in the dump; use the Neon database owner role or a role granted sufficient read privileges. Do not grant privileges solely for this migration without reviewing them.
+
+Create and verify a private custom-format backup. The helper loads the direct URL from the ignored env file, passes it to libpq through the child process environment (not command-line arguments), enforces directory/file permissions, runs `pg_dump`, and requires `pg_restore --list` to find archive entries:
+
+```sh
+.venv/bin/python scripts/backup_neon.py --env-file .env.local
+```
+
+The helper prints the private backup path, size, and archive entry count. Keep that file outside the repository. `pg_restore --list` verifies the archive header and table of contents; it is not a full recovery test. For stronger assurance, restore the archive into a disposable isolated PostgreSQL database of a compatible version using parsed libpq `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGSSLMODE` environment settings and `pg_restore --exit-on-error --no-owner --no-privileges --dbname=<scratch-database> <archive>`, then compare its table/schema contents. Never restore over production as a test. Only after the target, TLS, client versions, file permissions, nonempty dump, and archive listing are checked, run the additive feature migration:
+
+```sh
+.venv/bin/python scripts/migrate_learning_records.py --postgres --acknowledge-postgres-backup --env-file .env.local
+```
+
+The acknowledgement flag means you completed the private full dump and archive-list checks. Both this feature migration and the initial `migrate_to_postgres.py` command use only `DATABASE_URL_UNPOOLED`; the Flask/Vercel application continues to use pooled `DATABASE_URL`. The migration command displays the sanitized target preflight before connecting for DDL, applies only additive changes under the existing advisory transaction lock, can be retried safely, and verifies unchanged digests for every original study table. Connection strings and study row contents are not printed. Do not rerun the original SQLite-to-Neon migration if the existing data is already in Neon. If you cannot verify the intended target and a full database backup, stop at this gate.
+
+For a future non-production migration, run read-only schema verification against that same private direct URL:
+
+```sh
+.venv/bin/python scripts/migrate_learning_records.py --verify-postgres --env-file .env.local
+```
+
+It must report base schema version2, feature migration version3, and a learning-record count no greater than75. The currently deployed app remains usable after v3 because its required version2 tables and metadata remain unchanged. For the current production database, this verification is already complete per the owner-reported results above. Promote code only after the migration and read-only verification succeed; do not repeat those commands for the already-prepared production database.
+
+After a future isolated migration reports `Migration version 3 verified` and matching original-table digests, promote the reviewed feature code. For production, both conditions have already been met and this release is code-only; Neon remains authoritative. Preview deployments need a separate isolated database/schema with the same explicit migration. New full JSON backups use version2 and include learning records. Restoring version1 preserves any current learning records; version2 replaces them with the rest of the exported study tables. Both restore paths create a safety copy first.
+
+The personal learning-record JSON format is independent of full backups:
+
+```json
+{
+  "format": "grind75-learning-records",
+  "version": 1,
+  "records": [
+    {
+      "problem_id": "two-sum",
+      "brute_force": "",
+      "optimized_reasoning": "",
+      "optimal_complexity": "",
+      "recognition_clue": "",
+      "mistakes": "",
+      "corrections": "",
+      "edge_cases": "",
+      "interview_takeaway": "",
+      "recall_question": ""
+    }
+  ]
+}
+```
+
+IDs must match the frozen seed. Imports accept1–12 records and up to256 KiB; each field accepts text up to8,000 characters. Nonempty personal fields are preserved by default; replacement is selected per conflict, and empty imported values never clear existing text. Preview tokens expire after20 minutes. Confirmation is one transaction, detects intervening record changes, and writes only learning-record fields and audit events. Status, mastery, assignments, attempt timestamps and review schedules/results cannot be imported. Only the authenticated manual editor can intentionally clear a field. Individual, selected and all-record exports use this same format. Public Study Context sharing continues to exclude these records.
 
 ## 9. Troubleshooting
 
