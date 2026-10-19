@@ -54,8 +54,25 @@ No AI tutor, code runner, grading, paid API, frontend framework rewrite, timer o
 
 After explicit schema migration version3, each problem has a separate **My Learning Record** for your brute-force explanation, optimized reasoning, complexity, recognition clue, actual mistakes, corrections, edge cases, interview takeaway and recall question. Editing or importing these records does not change status, mastery, assignments or review scheduling.
 
-Use **Cheat Sheets → My Learning Records → Import a ChatGPT batch** to paste or upload version1 JSON. Review every matched problem before confirming. Existing nonempty fields stay unless you select a particular replacement; imported empty strings never clear saved values. The batch limit is12 records/256 KiB and8,000 characters per field. Export one, selected or all personal records in the same format. Full application backup/restore is a separate workflow.
+Use **My Learning Records → Import a ChatGPT batch** to paste or upload version1 JSON. Review every matched problem before confirming. Existing nonempty fields stay unless you select a particular replacement; imported empty strings never clear saved values. The batch limit is12 records/256 KiB and8,000 characters per field. Export one, selected or all personal records in the same format. Full application backup/restore is a separate workflow.
 
 Personal records require authentication and are excluded from public Study Context sharing. Review pages show your recall question first and hide mistakes/corrections behind an explicit reveal. Full backups become version2 after migration; old version1 backups remain restorable without deleting current learning records.
 
 The additive SQLite/PostgreSQL migration is explicit; startup and Vercel builds never apply it. Follow [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md#personal-learning-records-schema-migration). Do not migrate production until a private, verified full database backup exists.
+
+
+## Study workspace
+
+The desktop study rail groups practice, reference material, planning and private tools. On tablets/phones, open **Menu** to navigate. Today highlights one next problem and keeps new attempts separate from reviews. A problem’s section links lead through attempt/status, quick session notes, the three grouped learning-record sections, the spoiler-protected general guide, review and history.
+
+My Learning Records supports search, saved/empty filters, visible-record selection and explicit selected/all exports. Import uses Add JSON → Preview changes → Confirm import, with safe default preservation, full before/after comparisons and a live decision summary. All nine field strings and existing import limits remain intact. With JavaScript enabled, learning-record saves also preserve original line endings and warn before leaving unsaved edits; a failed save keeps the form text available. Theme is the only preference stored in browser local storage.
+
+Optional browser regression (requires Playwright plus its Chromium browser in your Python test environment):
+
+```sh
+python3 -m pip install playwright
+python3 -m playwright install chromium
+python3 scripts/check_ui.py
+```
+
+This command creates its own temporary SQLite database, synthetic credentials and loopback server; it accepts no external database or app URL. It checks full-content imports/edits/downloads, normal study workflows, and both themes at1440/1024/768/390/320px. Screenshots contain synthetic data and are saved under ignored `docs/screenshots/redesign/`. The UI redesign requires no production database migration; production is already on additive feature schema3.

@@ -1,5 +1,7 @@
 import json
 import secrets
+import sqlite3
+import psycopg
 from datetime import date, timedelta
 from urllib.parse import urlsplit
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, session, url_for, Response
@@ -16,7 +18,10 @@ def csrf():
 
 @bp.app_context_processor
 def context():
-    return dict(statuses=s.STATUSES,csrf=csrf,token=lambda:secrets.token_hex(20),local_day=s.local_day,activity_description=s.activity_description,study_today=s.today())
+    def records_available():
+        try:return lr.migration_ready()
+        except (RuntimeError,sqlite3.Error,psycopg.Error):return False
+    return dict(learning_records_available=records_available,statuses=s.STATUSES,csrf=csrf,token=lambda:secrets.token_hex(20),local_day=s.local_day,activity_description=s.activity_description,study_today=s.today())
 
 @bp.route('/')
 def today():
@@ -33,7 +38,10 @@ def today():
 @bp.route('/concepts/<cid>')
 def concepts(cid=None):
     concepts=[dict(r) for r in get_db().execute('SELECT * FROM concepts ORDER BY display_order')]
-    for c in concepts:c['content']=json.loads(c['content']);c['counts']=s.counts([p for p in s.rows() if p['concept_id']==c['id']])
+    all_items=s.rows()
+    for c in concepts:
+        group=[p for p in all_items if p['concept_id']==c['id']]
+        c['content']=json.loads(c['content']);c['counts']=s.counts(group);c['total']=len(group)
     if cid:
         concept=next((c for c in concepts if c['id']==cid),None)
         if not concept:abort(404)
@@ -86,6 +94,12 @@ def learning_records():
     require_learning_records()
     db=get_db();items=s.rows()
     records={r['problem_id']:dict(r) for r in db.execute('SELECT * FROM learning_records')}
+    # Presentation-only filters; record storage and export selection are unchanged.
+    q=request.args.get('q','').casefold().strip()
+    if q:items=[p for p in items if q in (p['title']+' '+p['concept_name']).casefold()]
+    state=request.args.get('record_state')
+    if state=='saved':items=[p for p in items if p['id'] in records]
+    elif state=='empty':items=[p for p in items if p['id'] not in records]
     return render_template('learning_records.html',items=items,records=records)
 
 
@@ -243,7 +257,13 @@ def calendar():
     for e in events:
         if e['kind'] in ('status','review'):
             day=s.local_day(e['at']);days.setdefault(day,dict(baseline=[],current=[],activity=[]))['activity'].append(e)
-    return render_template('calendar.html',days=sorted(days.items()),today=s.today().isoformat())
+    reviews_by_day={}
+    for p in items:
+        if p['next_due_date']:
+            day=p['next_due_date']
+            days.setdefault(day,dict(baseline=[],current=[],activity=[]))
+            reviews_by_day.setdefault(day,[]).append(p)
+    return render_template('calendar.html',days=sorted(days.items()),reviews_by_day=reviews_by_day,today=s.today().isoformat())
 
 @bp.route('/progress')
 def progress():
