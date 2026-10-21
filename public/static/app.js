@@ -113,13 +113,20 @@ document.querySelectorAll('[data-copy-code]').forEach(button => {
   if (!navigator.clipboard) return;
   button.hidden = false;
   button.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(document.querySelector(button.dataset.copyCode).textContent); button.textContent = 'Copied'; }
+    try { const target = document.querySelector(button.dataset.copyCode); await navigator.clipboard.writeText(target.dataset.copyValue ? JSON.parse(target.dataset.copyValue) : target.textContent); button.textContent = 'Copied'; }
     catch (_) { button.textContent = 'Select code to copy'; }
   });
 });
 
 // Count Unicode characters, rather than UTF-16 units, to match server limits.
 document.querySelectorAll('textarea[data-character-limit]').forEach(field => {
-  const validate = () => field.setCustomValidity(field.value.includes('\0') ? 'Remove the null character from this field.' : Array.from(field.value).length > Number(field.dataset.characterLimit) ? 'Use at most 8,000 characters in this field.' : '');
+  const validate = () => field.setCustomValidity(field.value.includes('\0') ? 'Remove the null character from this field.' : Array.from(field.value).length > Number(field.dataset.characterLimit) ? `Use at most ${Number(field.dataset.characterLimit).toLocaleString('en-US')} characters in this field.` : '');
   field.addEventListener('input', validate); validate();
+});
+
+// Native details supplies keyboard/no-JS disclosure; no source is executed.
+document.querySelectorAll('.solution-disclosure').forEach(details => {
+  details.addEventListener('toggle', () => {
+    details.querySelector('[data-solution-label]').textContent = details.open ? 'Hide Python reference solution' : 'Reveal Python reference solution';
+  });
 });

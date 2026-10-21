@@ -16,7 +16,7 @@ def export_data(db=None):
     has_records=lr.migration_ready(db)
     tables=BACKUP_TABLES if has_records else USER_TABLES
     def collect():
-        return dict(format='grind75-backup',version=2 if has_records else 1,seed_version=db.execute("SELECT value FROM settings WHERE key='seed_version'").fetchone()[0],exported_at=stamp(),tables={t:[dict(r) for r in db.execute(f'SELECT * FROM {t} ORDER BY 1')] for t in tables})
+        return dict(format='grind75-backup',version=3 if lr.solution_ready(db) else 2 if has_records else 1,seed_version=db.execute("SELECT value FROM settings WHERE key='seed_version'").fetchone()[0],exported_at=stamp(),tables={t:[dict(r) for r in db.execute(f'SELECT * FROM {t} ORDER BY 1')] for t in tables})
     # Reuse an enclosing restore transaction; SQLite's context manager is not nested.
     if not is_postgres(db) and db.in_transaction:
         return collect()
@@ -37,14 +37,17 @@ def validate(payload):
     check=connect(':memory:')
     try:
         initialize(check)
-        if isinstance(payload,dict) and payload.get('version')==2:
+        if isinstance(payload,dict) and payload.get('version') in (2,3):
             lr.migrate(check)
+            if payload['version']==3:
+                from .reference_solutions import migrate as migrate_solutions
+                migrate_solutions(check)
         expected_seed=check.execute("SELECT value FROM settings WHERE key='seed_version'").fetchone()[0]
-        if not isinstance(payload,dict) or set(payload)!= {'format','version','seed_version','exported_at','tables'} or payload['format']!='grind75-backup' or type(payload['version']) is not int or payload['version'] not in (1,2) or payload['seed_version']!=expected_seed:
+        if not isinstance(payload,dict) or set(payload)!= {'format','version','seed_version','exported_at','tables'} or payload['format']!='grind75-backup' or type(payload['version']) is not int or payload['version'] not in (1,2,3) or payload['seed_version']!=expected_seed:
             raise ValueError('Unsupported backup format or dataset version.')
         _timestamp(payload['exported_at'])
         tables=payload['tables']
-        expected_tables=BACKUP_TABLES if payload['version']==2 else USER_TABLES
+        expected_tables=BACKUP_TABLES if payload['version'] in (2,3) else USER_TABLES
         if not isinstance(tables,dict) or set(tables)!=set(expected_tables):raise ValueError('Backup tables are incomplete.')
         originals={r['problem_id']:r['baseline_date'] for r in check.execute('SELECT * FROM assignments')}
         for table in expected_tables:
@@ -74,8 +77,8 @@ def validate(payload):
                         if not isinstance(event_payload.get('result'),str) or event_payload['result'] not in ('independent','hints','failed'):raise ValueError('Invalid review event payload.')
                         if not isinstance(event_payload.get('note'),str) or len(event_payload['note'])>10000:raise ValueError('Invalid review event note.')
                     if item['kind'] in ('learning_record_edit','learning_record_import'):
-                        from .learning_records import FIELDS
-                        if not isinstance(event_payload.get('fields'),list) or any(x not in FIELDS for x in event_payload['fields']):raise ValueError('Invalid learning record event.')
+                        from .learning_records import ALL_FIELDS
+                        if not isinstance(event_payload.get('fields'),list) or any(x not in ALL_FIELDS for x in event_payload['fields']):raise ValueError('Invalid learning record event.')
                 if table=='assignments' and originals.get(item['problem_id'])!=item['baseline_date']:raise ValueError('Original assignment dates cannot change.')
                 if table=='learning_records':
                     from .learning_records import FIELDS, MAX_FIELD
@@ -83,6 +86,10 @@ def validate(payload):
                     for field in FIELDS:
                         value=item[field]
                         if not isinstance(value,str) or '\x00' in value or len(value)>MAX_FIELD:raise ValueError(f'Invalid learning-record field: {field}.')
+                    if payload['version']==3:
+                        from .reference_solutions import MAX_CODE
+                        value=item['solution_code']
+                        if not isinstance(value,str) or '\x00' in value or len(value)>MAX_CODE:raise ValueError('Invalid reference solution.')
                     _timestamp(item['updated_at'])
                 if table=='progress':
                     if item['status']!='not_started' and not item['first_attempt_at']:raise ValueError('Status requires an attempt.')
@@ -106,11 +113,15 @@ def validate(payload):
     finally:check.close()
     return payload
 
-def restore(payload):
+def restore(payload, acknowledge_legacy_solution_loss=False):
     validate(payload)
     db=get_db()
     with db:
         if not is_postgres(db): db.execute('BEGIN IMMEDIATE')
+        if payload['version']==3 and not lr.solution_ready(db):
+            raise ValueError('This backup requires explicit migration4; nothing was changed.')
+        if payload['version']==2 and lr.solution_ready(db) and db.execute("SELECT 1 FROM learning_records WHERE solution_code<>'' LIMIT 1").fetchone() and not acknowledge_legacy_solution_loss:
+            raise ValueError('Legacy version2 restore clears Python solutions. Explicitly acknowledge this replacement; a safety copy will be kept.')
         snapshot_payload=export_data(db)
         snapshot_name='before-restore-'+datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-%f')+'.json'
         if is_postgres(db):
@@ -120,7 +131,7 @@ def restore(payload):
             directory.mkdir(exist_ok=True)
             snapshot=directory/snapshot_name
             snapshot.write_text(json.dumps(snapshot_payload,indent=2));snapshot.chmod(0o600)
-        tables=BACKUP_TABLES if payload['version']==2 else USER_TABLES
+        tables=BACKUP_TABLES if payload['version'] in (2,3) else USER_TABLES
         for table in reversed(tables):db.execute(f'DELETE FROM {table}')
         for table in tables:
             for item in payload['tables'][table]:

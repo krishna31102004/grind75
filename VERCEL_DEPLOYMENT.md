@@ -1,6 +1,6 @@
 # Deploy Grind 75 to Vercel with Neon
 
-Updated October 19, 2026. **No Vercel project, cloud database, production migration, or deployment was created by this implementation.** You perform the steps below. Existing UI,75-question inventory, learning content, schedules and tracking remain intact.
+Updated October21,2026. The existing production tracker and curriculum release are recorded in PROGRESS.md. The original setup/v3 procedures below are historical instructions for a new isolated installation, **not commands to rerun against existing production**. Python reference solutions are implemented locally; explicit migration4 and release remain pending owner authorization. Follow [REFERENCE_SOLUTIONS_RELEASE.md](REFERENCE_SOLUTIONS_RELEASE.md).
 
 ## 1. Prepare credentials on this Mac
 
@@ -54,7 +54,7 @@ For a fresh **preview** installation with no personal data, create an ignored `.
 .venv/bin/python scripts/migrate_to_postgres.py seed-empty --env-file .env.preview.local
 ```
 
-Do **not** use `seed-empty` in place of migrating your existing production progress. For an already-migrated preview, redeployments need no seeding. Future schema upgrades require reviewed explicit migration commands. The deployed base schema is version2; the new learning-record feature adds explicit migration version3.
+Do **not** use `seed-empty` in place of migrating your existing production progress. For an already-migrated preview, redeployments need no seeding. Future schema upgrades require reviewed explicit migration commands. The base schema remains version2; learning records require feature migration3 and Python reference solutions require the separate feature migration4. Production already has migration3; do not rerun it.
 
 ## 4. Import the exact GitHub repository
 
@@ -146,7 +146,7 @@ For a local SQLite file, stop the tracker and keep a verified backup. The comman
 .venv/bin/python scripts/migrate_learning_records.py --sqlite instance/tracker.sqlite3
 ```
 
-For Neon production, run this **before promoting the new code to `main`**, so the current app continues to work while the additive schema is prepared. The migration adds only new tables and does not alter or drop anything read by the currently deployed version2 app. The old app can continue serving reads through its existing pooled `DATABASE_URL`; pause study writes during the brief migration/digest verification window so concurrent progress edits do not make the before/after integrity comparison fail. Verify in Neon's dashboard that the operator URL points to the same production project, branch/endpoint, and database currently used by the Vercel project's `DATABASE_URL`; do not rely on a copied label alone. The actual target and server version have not been inspected in this environment because no Neon credentials were supplied.
+For Neon production, run this **before promoting the new code to `main`**, so the current app continues to work while the additive schema is prepared. The migration adds only new tables and does not alter or drop anything read by the currently deployed version2 app. The old app can continue serving reads through its existing pooled `DATABASE_URL`; pause study writes during the brief migration/digest verification window so concurrent progress edits do not make the before/after integrity comparison fail. Verify in Neon's dashboard that the operator URL points to the same production project, branch/endpoint, and database currently used by the Vercel project's `DATABASE_URL`; do not rely on a copied label alone. Historical target/TLS/version verification and production releases are recorded in PROGRESS.md. Reconfirm the branch/endpoint independently for each later operator action; previous evidence is not a fresh preflight.
 
 Keep both URLs in the ignored local `.env.local`: pooled runtime `DATABASE_URL` and direct operations-only `DATABASE_URL_UNPOOLED`. The following preflight connects read-only, prints only host/database/server version/TLS/client versions (never credentials), rejects a Neon pooler endpoint, verifies TLS from libpq's client-side socket status (not the server's `pg_stat_ssl` view, which may not describe TLS terminated at a Neon proxy), and refuses PostgreSQL client tools older than the server:
 
@@ -178,7 +178,7 @@ For a future non-production migration, run read-only schema verification against
 
 It must report base schema version2, feature migration version3, and a learning-record count no greater than75. The currently deployed app remains usable after v3 because its required version2 tables and metadata remain unchanged. For the current production database, this verification is already complete per the owner-reported results above. Promote code only after the migration and read-only verification succeed; do not repeat those commands for the already-prepared production database.
 
-After a future isolated migration reports `Migration version 3 verified` and matching original-table digests, promote the reviewed feature code. For production, both conditions have already been met and this release is code-only; Neon remains authoritative. Preview deployments need a separate isolated database/schema with the same explicit migration. New full JSON backups use version2 and include learning records. Restoring version1 preserves any current learning records; version2 replaces them with the rest of the exported study tables. Both restore paths create a safety copy first.
+After a future isolated migration reports `Migration version 3 verified` and matching original-table digests, promote the reviewed feature code. For the prior v3 production release, both conditions were met. The new reference-solution release requires separate additive migration4; Neon remains authoritative. Preview deployments need a separate isolated database/schema with the same explicit migration. Full JSON backups use version2 on v3-only databases, or version3 after migration4, including solutions. Restoring version1 preserves current learning records/solutions; version2 replaces them with empty solutions and requires explicit acknowledgement if any saved solution would be lost. Version3 replaces all exported learning records/solutions. All restore paths require REPLACE and keep a safety copy.
 
 The personal learning-record JSON format is independent of full backups:
 
@@ -203,7 +203,7 @@ The personal learning-record JSON format is independent of full backups:
 }
 ```
 
-IDs must match the frozen seed. Imports accept1–12 records and up to256 KiB; each field accepts text up to8,000 characters. Nonempty personal fields are preserved by default; replacement is selected per conflict, and empty imported values never clear existing text. Preview tokens expire after20 minutes. Confirmation is one transaction, detects intervening record changes, and writes only learning-record fields and audit events. Status, mastery, assignments, attempt timestamps and review schedules/results cannot be imported. Only the authenticated manual editor can intentionally clear a field. Individual, selected and all-record exports use this same format. Public Study Context sharing continues to exclude these records.
+IDs must match the frozen seed. Imports accept1–20 records: version1 up to256 KiB with the nine original fields; version2 up to1 MiB, optionally including solution_code (up to65,536 characters). Each original field retains its8,000-character limit. Exports use version2 after migration4, otherwise version1. Missing/empty solution fields never clear saved source. Nonempty personal fields are preserved by default; replacement is selected per conflict, and empty imported values never clear existing text. Preview tokens expire after20 minutes. Confirmation is one transaction, detects intervening record changes, and writes only learning-record fields and audit events. Status, mastery, assignments, attempt timestamps and review schedules/results cannot be imported. Only the authenticated manual editor can intentionally clear a field. Individual, selected and all-record exports use this same format. Public Study Context sharing continues to exclude these records.
 
 ## 9. Troubleshooting
 
@@ -232,8 +232,14 @@ The test suite exercises SQLite and **real isolated local PostgreSQL14**, includ
 .venv/bin/python scripts/check_vercel_config.py
 ```
 
-Without `TEST_DATABASE_URL`, PostgreSQL-specific cases are explicitly skipped. For the complete suite, point that variable only at a disposable local PostgreSQL test database; the fixture creates/drops uniquely named schemas and rejects remote hosts. See PROGRESS.md for actual counts and reviewer/browser evidence. Neon connectivity, Vercel builds, HTTPS hosting and survival across an actual Vercel redeployment remain **unverified until you deploy**.
+Without `TEST_DATABASE_URL`, PostgreSQL-specific cases are explicitly skipped. For the complete suite, point that variable only at a disposable local PostgreSQL test database; the fixture creates/drops uniquely named schemas and rejects remote hosts. See PROGRESS.md for actual counts and reviewer/browser evidence. Historical live connectivity/deployment checks are recorded in PROGRESS.md; this reference-solution feature has only isolated test verification and is **not yet migrated or deployed**.
 
 ### Personal curriculum update
 
 See [CURRICULUM_UPDATE.md](CURRICULUM_UPDATE.md) for the explicit, backup-gated75-question ordering operation. Editing the seed alone does not change an existing database. Never run this automatically during startup/build or rerun either database migration.
+
+### Python reference solutions — migration4 (pending authorization)
+
+Use [REFERENCE_SOLUTIONS_RELEASE.md](REFERENCE_SOLUTIONS_RELEASE.md), which supersedes the historical v3 release procedure for this feature. No Vercel settings, runtime pooled DATABASE_URL, authentication secrets or sharing settings change. The operator-only direct DATABASE_URL_UNPOOLED must use sslmode=verify-full with a trusted CA. Never rerun the previous database migrations.
+
+Full JSON backup version3 includes source. Version2 restoration on v4 clears solutions only after the extra loss acknowledgement plus REPLACE, with a recoverable safety copy; version1 leaves learning_records untouched. The request limit is16 MiB (JSON batch remains1 MiB) to accommodate full75-problem exports with code. Paste form memory is4 MiB to accommodate URL-encoded UTF-8 JSON within the1 MiB batch limit. Real progress/backups/source must remain private and ignored by Git.

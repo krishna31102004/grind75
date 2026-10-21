@@ -12,14 +12,21 @@ from .db import get_db, is_postgres
 from .services import stamp
 
 FORMAT = 'grind75-learning-records'
-VERSION = 1
+VERSION = 2
 FIELDS = (
     'brute_force', 'optimized_reasoning', 'optimal_complexity', 'recognition_clue',
     'mistakes', 'corrections', 'edge_cases', 'interview_takeaway', 'recall_question',
 )
+ALL_FIELDS = FIELDS + ('solution_code',)
+from .reference_solutions import ready as solution_ready, MAX_CODE
+
+def fields_for(db):
+    return ALL_FIELDS if solution_ready(db) else FIELDS
+
 MAX_FIELD = 8000
-MAX_BYTES = 256 * 1024
-MAX_RECORDS = 12
+LEGACY_MAX_BYTES = 256 * 1024
+MAX_BYTES = 1024 * 1024
+MAX_RECORDS = 20
 
 
 def migration_ready(db=None):
@@ -59,28 +66,32 @@ def _pairs(pairs):
 def parse(raw, db=None):
     if isinstance(raw, bytes):
         if len(raw) > MAX_BYTES:
-            raise ValueError('Import is larger than 256 KiB.')
+            raise ValueError('Import is larger than 1 MiB.')
         try:
             raw = raw.decode('utf-8')
         except UnicodeDecodeError:
             raise ValueError('Import must be UTF-8 JSON.') from None
     if not isinstance(raw, str) or len(raw.encode('utf-8')) > MAX_BYTES:
-        raise ValueError('Import is larger than 256 KiB.')
+        raise ValueError('Import is larger than 1 MiB.')
     try:
         data = json.loads(raw, object_pairs_hook=_pairs, parse_constant=lambda x: (_ for _ in ()).throw(ValueError('Invalid JSON number.')))
     except (json.JSONDecodeError, RecursionError) as exc:
         raise ValueError('Enter valid JSON.') from exc
-    if not isinstance(data, dict) or set(data) != {'format', 'version', 'records'} or data.get('format') != FORMAT or type(data.get('version')) is not int or data['version'] != VERSION:
+    if not isinstance(data, dict) or set(data) != {'format', 'version', 'records'} or data.get('format') != FORMAT or type(data.get('version')) is not int or data['version'] not in (1, VERSION):
         raise ValueError('Unsupported learning-record format or version.')
+    if data['version']==1 and len(raw.encode('utf-8'))>LEGACY_MAX_BYTES:
+        raise ValueError('Legacy version1 import is larger than 256 KiB.')
     records = data['records']
     if not isinstance(records, list) or not 1 <= len(records) <= MAX_RECORDS:
         raise ValueError(f'Provide between 1 and {MAX_RECORDS} records per batch.')
     db = db or get_db()
+    active_fields = fields_for(db)
+    allowed_fields = FIELDS if data['version']==1 else ALL_FIELDS
     known = {r[0] for r in db.execute('SELECT id FROM problems')}
     seen = set()
     normalized = []
     for index, item in enumerate(records, 1):
-        if not isinstance(item, dict) or 'problem_id' not in item or set(item) - ({'problem_id'} | set(FIELDS)):
+        if not isinstance(item, dict) or 'problem_id' not in item or set(item) - ({'problem_id'} | set(allowed_fields)):
             raise ValueError(f'Record {index} has an invalid shape or unknown field.')
         pid = item['problem_id']
         if not isinstance(pid, str) or pid not in known:
@@ -89,13 +100,16 @@ def parse(raw, db=None):
             raise ValueError(f'Duplicate problem_id: {pid}.')
         seen.add(pid)
         row = {'problem_id': pid}
-        for field in FIELDS:
+        if 'solution_code' in item and 'solution_code' not in active_fields:
+            raise ValueError('Python reference solutions require the explicit migration4 first.')
+        for field in active_fields:
             value = item.get(field, '')
-            if not isinstance(value, str) or '\x00' in value or len(value) > MAX_FIELD:
-                raise ValueError(f'{pid}.{field} must be text of at most {MAX_FIELD} characters.')
+            limit = MAX_CODE if field=='solution_code' else MAX_FIELD
+            if not isinstance(value, str) or '\x00' in value or len(value) > limit:
+                raise ValueError(f'{pid}.{field} must be text of at most {limit} characters.')
             row[field] = value
         normalized.append(row)
-    return {'format': FORMAT, 'version': VERSION, 'records': normalized}
+    return {'format': FORMAT, 'version': data['version'], 'records': normalized}
 
 
 def get_record(db, pid):
@@ -112,7 +126,8 @@ def export(db, ids=None):
             row = db.execute('SELECT * FROM learning_records WHERE problem_id=?', (pid,)).fetchone()
             if row:
                 rows.append(row)
-    return {'format': FORMAT, 'version': VERSION, 'records': [{k: dict(row)[k] for k in ('problem_id',) + FIELDS} for row in rows]}
+    fields = fields_for(db)
+    return {'format': FORMAT, 'version': VERSION if 'solution_code' in fields else 1, 'records': [{k: dict(row)[k] for k in ('problem_id',) + fields} for row in rows]}
 
 
 def fingerprint(row):
@@ -125,15 +140,16 @@ def snapshot(db, incoming):
 
 
 def preview(db, incoming):
+    fields = fields_for(db)
     current = {r['problem_id']: get_record(db, r['problem_id']) for r in incoming['records']}
     problems = {r['id']: r['title'] for r in db.execute('SELECT id,title FROM problems')}
     entries = []
     for item in incoming['records']:
         old = current[item['problem_id']]
-        old_values = old or {field: '' for field in FIELDS}
+        old_values = old or {field: '' for field in fields}
         changes = []
-        for field in FIELDS:
-            before, after = old_values[field], item[field]
+        for field in fields:
+            before, after = old_values[field], item.get(field, '')
             kind = 'same' if before == after else 'new' if not before and after else 'ignored-empty' if before and not after else 'conflict'
             changes.append({'field': field, 'before': before, 'after': after, 'kind': kind})
         entries.append({'problem_id': item['problem_id'], 'title': problems[item['problem_id']], 'existing': old, 'incoming': item, 'changes': changes})
@@ -141,6 +157,7 @@ def preview(db, incoming):
 
 
 def apply(db, incoming, replace_fields, skipped):
+    fields = fields_for(db)
     changed = []
     for item in incoming['records']:
         pid = item['problem_id']
@@ -149,17 +166,17 @@ def apply(db, incoming, replace_fields, skipped):
         old = get_record(db, pid)
         values = old or {'problem_id': pid}
         updates = {}
-        for field in FIELDS:
-            new = item[field]
+        for field in fields:
+            new = item.get(field, '')
             before = values.get(field, '')
             if new and new != before and (not before or field in replace_fields.get(pid, ())):
                 updates[field] = new
         if not updates:
             continue
-        merged = {field: updates.get(field, values.get(field, '')) for field in FIELDS}
+        merged = {field: updates.get(field, values.get(field, '')) for field in fields}
         merged['updated_at'] = stamp()
-        columns = ['problem_id', *FIELDS, 'updated_at']
-        db.execute(f"INSERT INTO learning_records({','.join(columns)}) VALUES({','.join('?' for _ in columns)}) ON CONFLICT(problem_id) DO UPDATE SET {','.join(f'{f}=excluded.{f}' for f in FIELDS)},updated_at=excluded.updated_at", [pid, *[merged[f] for f in FIELDS], merged['updated_at']])
+        columns = ['problem_id', *fields, 'updated_at']
+        db.execute(f"INSERT INTO learning_records({','.join(columns)}) VALUES({','.join('?' for _ in columns)}) ON CONFLICT(problem_id) DO UPDATE SET {','.join(f'{f}=excluded.{f}' for f in fields)},updated_at=excluded.updated_at", [pid, *[merged[f] for f in fields], merged['updated_at']])
         event_id = secrets.token_hex(16)
         db.execute('INSERT INTO activity_events VALUES(?,?,?,?,?)', (event_id, pid, 'learning_record_import', stamp(), json.dumps({'fields': sorted(updates)})))
         changed.append(pid)

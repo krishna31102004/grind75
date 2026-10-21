@@ -54,7 +54,7 @@ def test_import_duplicate_json_key(client):
 
 
 def test_import_size_limit(client):
-    data=form(client,'/backup');data.update(confirm='REPLACE',backup=(io.BytesIO(b'x'*(4*1024*1024)),'large.json'))
+    data=form(client,'/backup');data.update(confirm='REPLACE',backup=(io.BytesIO(b'x'*(16*1024*1024)),'large.json'))
     assert client.post('/backup',data=data).status_code==413
 
 

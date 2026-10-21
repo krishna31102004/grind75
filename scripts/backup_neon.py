@@ -32,10 +32,15 @@ LIBPQ_ENV = {
 def pg_client_environment(url):
     """Map parsed URL fields to libpq environment variables, never argv."""
     environment = os.environ.copy()
+    # Preserve the operator-selected CA bundle when it is supplied through
+    # libpq environment rather than the URL. Explicit URL settings win below.
+    root_certificate = environment.get('PGSSLROOTCERT')
     for name in set(LIBPQ_ENV.values()) | {'PGSERVICE', 'PGSERVICEFILE'}:
         environment.pop(name, None)
     environment.pop('DATABASE_URL', None)
     environment.pop('DATABASE_URL_UNPOOLED', None)
+    if root_certificate:
+        environment['PGSSLROOTCERT'] = root_certificate
     for key, value in conninfo_to_dict(url).items():
         env_name = LIBPQ_ENV.get(key)
         if env_name and value:

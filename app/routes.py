@@ -82,7 +82,7 @@ def problem(pid):
     history=[dict(r) for r in get_db().execute('SELECT * FROM activity_events WHERE problem_id=? ORDER BY at DESC,id DESC',(pid,))]
     reviews=[dict(r) for r in get_db().execute('SELECT * FROM review_events WHERE problem_id=? ORDER BY at DESC,id DESC',(pid,))]
     record=lr.get_record(get_db(),pid) if lr.migration_ready() else None
-    return render_template('problem.html',p=p,guide=guide,history=history,reviews=reviews,learning_record=record,learning_records_ready=lr.migration_ready())
+    return render_template('problem.html',p=p,guide=guide,history=history,reviews=reviews,learning_record=record,learning_records_ready=lr.migration_ready(),solutions_ready=lr.solution_ready(get_db()))
 
 def require_learning_records():
     if not lr.migration_ready():
@@ -123,6 +123,25 @@ def save_learning_record(pid):
     return redirect(url_for('main.problem',pid=pid))
 
 
+@bp.route('/problem/<pid>/solution',methods=['POST'])
+def save_solution(pid):
+    require_learning_records();db=get_db()
+    if not lr.solution_ready(db):abort(503,description='Reference solutions require explicit migration4.')
+    if not db.execute('SELECT 1 FROM problems WHERE id=?',(pid,)).fetchone():abort(404)
+    value=request.form.get('solution_code','')
+    if len(value)>lr.MAX_CODE or '\x00' in value:
+        flash('Reference solution must be text of at most 65,536 characters, without null characters.','error')
+        return redirect(url_for('main.problem',pid=pid)+'#reference-solution')
+    with db:
+        if not is_postgres(db):db.execute('BEGIN IMMEDIATE')
+        old=lr.get_record(db,pid)
+        if (old or {}).get('solution_code','')!=value and s.begin(db,request.form.get('token')):
+            db.execute("INSERT INTO learning_records(problem_id,solution_code,updated_at) VALUES(?,?,?) ON CONFLICT(problem_id) DO UPDATE SET solution_code=excluded.solution_code,updated_at=excluded.updated_at",(pid,value,s.stamp()))
+            s.event(db,request.form['token'],pid,'learning_record_edit',dict(fields=['solution_code']))
+    flash('Python reference solution saved.','success')
+    return redirect(url_for('main.problem',pid=pid)+'#reference-solution')
+
+
 @bp.route('/learning-records/import',methods=['GET','POST'])
 def learning_records_import():
     require_learning_records();db=get_db()
@@ -130,7 +149,7 @@ def learning_records_import():
         upload=request.files.get('file')
         if upload and upload.filename and not upload.filename.lower().endswith('.json'):
             flash('Choose a .json file or paste JSON text.','error')
-            sample={'format':lr.FORMAT,'version':lr.VERSION,'records':[{'problem_id':'two-sum',**{field:'' for field in lr.FIELDS}}]}
+            sample={'format':lr.FORMAT,'version':lr.VERSION,'records':[{'problem_id':'two-sum',**{field:'' for field in lr.fields_for(db)}}]}
             return render_template('learning_import.html',sample=json.dumps(sample,ensure_ascii=False,indent=2),json_text=request.form.get('json',''))
         raw=upload.read(lr.MAX_BYTES+1) if upload and upload.filename else request.form.get('json','').encode('utf-8')
         try:
@@ -165,7 +184,7 @@ def learning_records_import():
             db.execute('DELETE FROM learning_import_previews WHERE token_hash=?',(stored['token_hash'],))
         flash(f'Import complete. {len(changed)} personalized record(s) changed; progress and review states were untouched.','success')
         return redirect(url_for('main.learning_records'))
-    sample={'format':lr.FORMAT,'version':lr.VERSION,'records':[{'problem_id':'two-sum',**{field:'' for field in lr.FIELDS}}]}
+    sample={'format':lr.FORMAT,'version':lr.VERSION,'records':[{'problem_id':'two-sum',**{field:'' for field in lr.fields_for(db)}}]}
     return render_template('learning_import.html',sample=json.dumps(sample,ensure_ascii=False,indent=2),json_text=request.form.get('json',''))
 
 
@@ -190,7 +209,7 @@ def personalized_review(pid):
     if not lr.migration_ready():abort(404)
     p=next((p for p in s.rows() if p['id']==pid),None)
     if p is None:abort(404)
-    return render_template('personalized_review.html',p=p,record=lr.get_record(get_db(),pid))
+    return render_template('personalized_review.html',p=p,record=lr.get_record(get_db(),pid),solutions_ready=lr.solution_ready(get_db()))
 
 @bp.route('/problem/<pid>/<action>',methods=['POST'])
 def update(pid,action):
@@ -293,7 +312,7 @@ def backup():
                     result[k]=v
                 return result
             payload=json.load(file,object_pairs_hook=unique)
-            saved=restore(payload);flash('Restored successfully. A safety copy was saved: '+saved,'success')
+            saved=restore(payload,acknowledge_legacy_solution_loss=request.form.get('legacy_solution_loss')=='yes');flash('Restored successfully. A safety copy was saved: '+saved,'success')
             return redirect(url_for('main.backup'))
         except (ValueError,UnicodeError,RecursionError) as exc:flash('Import rejected: '+str(exc),'error')
     return render_template('backup.html',safety_copies=[dict(r) for r in get_db().execute('SELECT id,created_at FROM safety_backups ORDER BY created_at DESC')])

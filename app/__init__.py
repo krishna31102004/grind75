@@ -23,7 +23,7 @@ def create_app(config=None):
         ADMIN_USERNAME=os.environ.get('ADMIN_USERNAME', 'admin'),
         ADMIN_PASSWORD_HASH=os.environ.get('ADMIN_PASSWORD_HASH'),
         PRODUCTION=deployed,
-        MAX_CONTENT_LENGTH=4*1024*1024,
+        MAX_CONTENT_LENGTH=16*1024*1024, MAX_FORM_MEMORY_SIZE=4*1024*1024,
         SESSION_COOKIE_SAMESITE='Strict', SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SECURE=deployed, PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
         TRUSTED_HOSTS=['127.0.0.1','localhost'], DEBUG=False,

@@ -119,3 +119,10 @@ def test_preflight_tls_failure_has_safe_category_and_redacts_exception(monkeypat
     message = preflight_error_message(error.value)
     assert message.startswith('Preflight failed [tls]:')
     assert secret not in message
+
+
+def test_backup_preserves_operator_ca_bundle_and_url_override(monkeypatch):
+    monkeypatch.setenv('PGSSLROOTCERT','/private/operator-ca.pem')
+    url='postgresql://ops:synthetic-secret@ep-demo.neon.tech/grind75?sslmode=verify-full'
+    assert pg_client_environment(url)['PGSSLROOTCERT']=='/private/operator-ca.pem'
+    assert pg_client_environment(url+'&sslrootcert=/private/explicit-ca.pem')['PGSSLROOTCERT']=='/private/explicit-ca.pem'

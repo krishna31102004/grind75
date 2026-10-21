@@ -18,13 +18,13 @@ After migration, PostgreSQL is authoritative. Keep `DATABASE_URL` and login secr
 
 Open Today → concept primer → LeetCode → independent attempt → quick brute-force explanation → optimization → short takeaway → review. Six new questions/day is a flexible target. Reviews never count as new attempts or automatically mark understanding. An explicit independent solve earns mastery; hinted/failed reviews clear mastery and schedule retry.
 
-The baseline assigns six/day October15–26 and three October27,2026. October28–November1 emphasizes revision; November2 is a readiness checkpoint with no lockout. Work ahead and catch-up preserve original dates/history. Manual moves are in each problem's Assignment & activity history section. All study dates use America/Chicago.
+Original baseline dates remain immutable. The remaining personal curriculum starts October20,2026 at #14 Diameter of Binary Tree, with six/day as a soft target; unfinished #1–13 entries remain separately accessible. October28–November1 emphasizes revision; November2 is a readiness checkpoint with no lockout. Work ahead and catch-up preserve original dates/history. Manual moves are in each problem's Assignment & activity history section. All study dates use America/Chicago.
 
 ## Deploy yourself to Vercel
 
 Use the existing [krishna31102004/grind75 repository](https://github.com/krishna31102004/grind75), branch `main`. Follow **[VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md)** for exact project settings, free-tier Neon setup, safe SQLite migration/verification, credentials, preview isolation, deployment and post-deployment checks.
 
-Native Flask discovery uses root `wsgi.py`; `vercel.json` has no legacy builds/rewrites. Static assets are in `public/static/`. `DATABASE_URL`, `SECRET_KEY` and `ADMIN_PASSWORD_HASH` are required in production. Schema/migration work is explicit, never part of builds or startup. No cloud resource or deployment was created during this implementation.
+Native Flask discovery uses root `wsgi.py`; `vercel.json` has no legacy builds/rewrites. Static assets are in `public/static/`. `DATABASE_URL`, `SECRET_KEY` and `ADMIN_PASSWORD_HASH` are required in production. Schema/migration work is explicit, never part of builds or startup. The existing production application is https://grind75.vercel.app. New feature releases still require separate migration/release approval.
 
 ## Study Context and ChatGPT
 
@@ -48,15 +48,15 @@ Tests use temporary SQLite files. With `TEST_DATABASE_URL` set to a **disposable
 
 [Dataset provenance](data/SOURCES.md) records the creator-published75 selection and October15 remote checks. Rebuild frozen content offline with `scripts/build_seed.py` and `scripts/author_guides.py`; this does not reset personal progress. The original [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) documents the initial local scope; the later deployment preparation is recorded in AGENTS.md and the deployment guide.
 
-No AI tutor, code runner, grading, paid API, frontend framework rewrite, timer or shortcuts were added. Learning status is self-reported. Actual Neon/Vercel production connectivity and redeployment persistence must be verified after you deploy.
+No AI tutor, code runner, grading, paid API, frontend framework rewrite, timer or shortcuts were added. Learning status is self-reported. For historical production verification and current feature-release status, see PROGRESS.md.
 
 ## Personal Learning Records
 
 After explicit schema migration version3, each problem has a separate **My Learning Record** for your brute-force explanation, optimized reasoning, complexity, recognition clue, actual mistakes, corrections, edge cases, interview takeaway and recall question. Editing or importing these records does not change status, mastery, assignments or review scheduling.
 
-Use **My Learning Records → Import a ChatGPT batch** to paste or upload version1 JSON. Review every matched problem before confirming. Existing nonempty fields stay unless you select a particular replacement; imported empty strings never clear saved values. The batch limit is12 records/256 KiB and8,000 characters per field. Export one, selected or all personal records in the same format. Full application backup/restore is a separate workflow.
+Use **My Learning Records → Import a ChatGPT batch** to paste or upload version2 JSON (legacy version1 remains accepted). Review every matched problem before confirming. Existing nonempty fields stay unless you select a particular replacement; imported empty strings never clear saved values. The batch limit is20 records/1 MiB for version2 (legacy version1:256 KiB),8,000 characters per reasoning field and65,536 characters per Python solution. Export one, selected or all personal records in the same format. Full application backup/restore is a separate workflow.
 
-Personal records require authentication and are excluded from public Study Context sharing. Review pages show your recall question first and hide mistakes/corrections behind an explicit reveal. Full backups become version2 after migration; old version1 backups remain restorable without deleting current learning records.
+Personal records require authentication and are excluded from public Study Context sharing. Review pages show your recall question first and hide mistakes/corrections behind an explicit reveal. After migration4, full backups use version3 and include reference solutions. Version1 restores preserve current learning records/solutions; version2 replaces learning records without solutions and requires an extra acknowledgement before clearing saved solutions. Every restore requires REPLACE and retains a safety copy.
 
 The additive SQLite/PostgreSQL migration is explicit; startup and Vercel builds never apply it. Follow [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md#personal-learning-records-schema-migration). Do not migrate production until a private, verified full database backup exists.
 
@@ -65,7 +65,7 @@ The additive SQLite/PostgreSQL migration is explicit; startup and Vercel builds 
 
 The desktop study rail groups practice, reference material, planning and private tools. On tablets/phones, open **Menu** to navigate. Today highlights one next problem and keeps new attempts separate from reviews. A problem’s section links lead through attempt/status, quick session notes, the three grouped learning-record sections, the spoiler-protected general guide, review and history.
 
-My Learning Records supports search, saved/empty filters, visible-record selection and explicit selected/all exports. Import uses Add JSON → Preview changes → Confirm import, with safe default preservation, full before/after comparisons and a live decision summary. All nine field strings and existing import limits remain intact. With JavaScript enabled, learning-record saves also preserve original line endings and warn before leaving unsaved edits; a failed save keeps the form text available. Theme is the only preference stored in browser local storage.
+My Learning Records supports search, saved/empty filters, visible-record selection and explicit selected/all exports. Import uses Add JSON → Preview changes → Confirm import, with safe default preservation, full before/after comparisons and a live decision summary. All nine field strings retain their exact content; imports also accept an optional Python solution within the limits above. With JavaScript enabled, learning-record saves also preserve original line endings and warn before leaving unsaved edits; a failed save keeps the form text available. Theme is the only preference stored in browser local storage.
 
 Optional browser regression (requires Playwright plus its Chromium browser in your Python test environment):
 
@@ -75,8 +75,22 @@ python3 -m playwright install chromium
 python3 scripts/check_ui.py
 ```
 
-This command creates its own temporary SQLite database, synthetic credentials and loopback server; it accepts no external database or app URL. It checks full-content imports/edits/downloads, normal study workflows, and both themes at1440/1024/768/390/320px. Screenshots contain synthetic data and are saved under ignored `docs/screenshots/redesign/`. The UI redesign requires no production database migration; production is already on additive feature schema3.
+This command creates its own temporary SQLite database, synthetic credentials and loopback server; it accepts no external database or app URL. It checks full-content imports/edits/downloads, normal study workflows, and both themes at1440/1024/768/390/320px. Screenshots contain synthetic data and are saved under ignored `docs/screenshots/redesign/`. The prior UI redesign required no schema change. Python reference solutions require explicit additive migration4 before enabling solution storage.
 
 ### Personal curriculum update
 
 See [CURRICULUM_UPDATE.md](CURRICULUM_UPDATE.md) for the explicit, backup-gated75-question ordering operation. Editing the seed alone does not change an existing database. Never run this automatically during startup/build or rerun either database migration.
+
+## Python Reference Solutions
+
+After explicit migration4, open a problem → **Python Reference Solution**, immediately after My Learning Record. It starts collapsed. Reveal to read/copy the saved source or paste/edit it and save. Recall-first review has the same hidden reference. Source is private inert text: never executed, never counted as an attempt, and excluded from authenticated/shared Study Context summaries. JavaScript preserves original CRLF on unchanged saves and exact clipboard copies; new textarea edits use the browser's normal line endings. Indentation and whitespace are retained.
+
+Version2 batches accept `{ "problem_id": "reverse-linked-list", "solution_code": "def solve():\n    pass\n" }` inside the existing format/records envelope. Solution-only and combined records work. Missing/empty fields do not erase saved text; approve individual conflicts explicitly. Export includes solutions. Intentional clearing is available in the authenticated manual editor.
+
+Follow [REFERENCE_SOLUTIONS_RELEASE.md](REFERENCE_SOLUTIONS_RELEASE.md) for the backup-gated, direct-URL migration4 and release procedure. **Production migration/deployment is pending owner authorization.** Builds/startup never migrate. Do not rerun migration3 or the original SQLite-to-Neon cutover.
+
+Focused browser regression (same Playwright setup as above):
+
+```sh
+python3 scripts/check_reference_solutions_ui.py
+```

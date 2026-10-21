@@ -1,0 +1,16 @@
+<section class="study-section" id="reference-solution">
+<h2>Python Reference Solution</h2>
+{% if solutions_ready %}
+<details class="panel solution-disclosure"><summary><span data-solution-label>Reveal Python reference solution</span></summary>
+<p class="subtle">Private reference only. This code is never executed and does not change your progress or reviews.</p>
+{% set code=(solution_record.solution_code if solution_record else '') %}
+{% if code %}<div class="section-heading"><span>Saved Python source</span><button type="button" class="quiet small" data-copy-code="#python-reference-code" hidden>Copy Code</button></div><pre class="reference-code"><code id="python-reference-code" data-copy-value="{{code|tojson|forceescape}}">{{code}}</code></pre>{% else %}<p>No Python reference solution saved yet.</p>{% endif %}
+{% if solution_editable %}
+<form method="post" action="{{url_for('main.save_solution',pid=p.id)}}" data-dirty-guard data-exact-record data-return-url="{{url_for('main.problem',pid=p.id)}}#reference-solution">{{fields()}}
+<label for="solution-code">Edit or paste Python source (up to 65,536 characters)</label><textarea id="solution-code" class="solution-editor" name="solution_code" rows="14" spellcheck="false" autocapitalize="off" data-character-limit="65536" data-original="{{code|tojson|forceescape}}">
+{{code}}</textarea>
+<div class="save-bar"><button>Save Python solution</button><span data-save-state aria-live="polite"></span></div></form>
+{% else %}<a href="{{url_for('main.problem',pid=p.id)}}#reference-solution">Edit this reference solution</a>{% endif %}
+</details>
+{% else %}<p class="notice">Reference solutions require the explicit additive migration4. Your existing learning records remain available.</p>{% endif %}
+</section>

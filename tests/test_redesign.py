@@ -126,15 +126,15 @@ def test_calendar_presented_review_dates_do_not_change_schedule(app,client):
     with app.app_context():assert before==study_state(get_db())
 
 
-@pytest.mark.parametrize('count',[12,13])
-def test_ui_import_record_limits_unchanged(app,client,count):
+@pytest.mark.parametrize('count',[20,21])
+def test_ui_import_record_limits_extended(app,client,count):
     prepare(app,client)
     with app.app_context():
-        ids=[r[0] for r in get_db().execute('SELECT id FROM problems LIMIT 13')]
+        ids=[r[0] for r in get_db().execute('SELECT id FROM problems LIMIT 21')]
         data={'format':FORMAT,'version':1,'records':[{'problem_id':pid} for pid in ids[:count]]}
-        if count==12:assert len(parse(json.dumps(data),get_db())['records'])==12
+        if count==20:assert len(parse(json.dumps(data),get_db())['records'])==20
         else:
-            with pytest.raises(ValueError,match='12'):parse(json.dumps(data),get_db())
+            with pytest.raises(ValueError,match='20'):parse(json.dumps(data),get_db())
 
 
 @pytest.mark.parametrize('as_bytes',[False,True])
