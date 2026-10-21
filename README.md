@@ -87,7 +87,7 @@ After explicit migration4, open a problem → **Python Reference Solution**, imm
 
 Version2 batches accept `{ "problem_id": "reverse-linked-list", "solution_code": "def solve():\n    pass\n" }` inside the existing format/records envelope. Solution-only and combined records work. Missing/empty fields do not erase saved text; approve individual conflicts explicitly. Export includes solutions. Intentional clearing is available in the authenticated manual editor.
 
-Follow [REFERENCE_SOLUTIONS_RELEASE.md](REFERENCE_SOLUTIONS_RELEASE.md) for the backup-gated, direct-URL migration4 and release procedure. **Production migration/deployment is pending owner authorization.** Builds/startup never migrate. Do not rerun migration3 or the original SQLite-to-Neon cutover.
+Follow [REFERENCE_SOLUTIONS_RELEASE.md](REFERENCE_SOLUTIONS_RELEASE.md) for the backup-gated, direct-URL migration4 and release procedure. **Production migration4 and application release completed October21,2026 under owner authorization; see PROGRESS.md for verification.** Builds/startup never migrate. Do not rerun migration3 or the original SQLite-to-Neon cutover.
 
 Focused browser regression (same Playwright setup as above):
 

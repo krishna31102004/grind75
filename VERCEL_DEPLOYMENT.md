@@ -1,6 +1,6 @@
 # Deploy Grind 75 to Vercel with Neon
 
-Updated October21,2026. The existing production tracker and curriculum release are recorded in PROGRESS.md. The original setup/v3 procedures below are historical instructions for a new isolated installation, **not commands to rerun against existing production**. Python reference solutions are implemented locally; explicit migration4 and release remain pending owner authorization. Follow [REFERENCE_SOLUTIONS_RELEASE.md](REFERENCE_SOLUTIONS_RELEASE.md).
+Updated October21,2026. The existing production tracker and curriculum release are recorded in PROGRESS.md. The original setup/v3 procedures below are historical instructions for a new isolated installation, **not commands to rerun against existing production**. Python reference solutions were released under owner authorization on October21,2026: migration4 verified, existing learning records preserved, and Vercel Production Ready. See PROGRESS.md for actual evidence; do not rerun completed migrations. Follow [REFERENCE_SOLUTIONS_RELEASE.md](REFERENCE_SOLUTIONS_RELEASE.md).
 
 ## 1. Prepare credentials on this Mac
 
@@ -232,13 +232,13 @@ The test suite exercises SQLite and **real isolated local PostgreSQL14**, includ
 .venv/bin/python scripts/check_vercel_config.py
 ```
 
-Without `TEST_DATABASE_URL`, PostgreSQL-specific cases are explicitly skipped. For the complete suite, point that variable only at a disposable local PostgreSQL test database; the fixture creates/drops uniquely named schemas and rejects remote hosts. See PROGRESS.md for actual counts and reviewer/browser evidence. Historical live connectivity/deployment checks are recorded in PROGRESS.md; this reference-solution feature has only isolated test verification and is **not yet migrated or deployed**.
+Without `TEST_DATABASE_URL`, PostgreSQL-specific cases are explicitly skipped. For the complete suite, point that variable only at a disposable local PostgreSQL test database; the fixture creates/drops uniquely named schemas and rejects remote hosts. See PROGRESS.md for actual counts and reviewer/browser evidence. Historical live connectivity/deployment checks are recorded in PROGRESS.md; this reference-solution feature now has verified migration4 and a Ready Production deployment, with authorized release evidence recorded in PROGRESS.md.
 
 ### Personal curriculum update
 
 See [CURRICULUM_UPDATE.md](CURRICULUM_UPDATE.md) for the explicit, backup-gated75-question ordering operation. Editing the seed alone does not change an existing database. Never run this automatically during startup/build or rerun either database migration.
 
-### Python reference solutions — migration4 (pending authorization)
+### Python reference solutions — migration4 (completed October21,2026)
 
 Use [REFERENCE_SOLUTIONS_RELEASE.md](REFERENCE_SOLUTIONS_RELEASE.md), which supersedes the historical v3 release procedure for this feature. No Vercel settings, runtime pooled DATABASE_URL, authentication secrets or sharing settings change. The operator-only direct DATABASE_URL_UNPOOLED must use sslmode=verify-full with a trusted CA. Never rerun the previous database migrations.
 
