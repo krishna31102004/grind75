@@ -1,6 +1,6 @@
 # Final personal curriculum — October 20, 2026
 
-This is an explicit data operation, **not a schema migration**. Never run either old migration script, reseed production, restore a backup into production, or invoke this operation during builds/startup. The application continues using pooled `DATABASE_URL`. Operations use private direct `DATABASE_URL_UNPOOLED`, with client-side TLS and target validation.
+This is an explicit data operation, **not a schema migration**. Never invoke either previous migration in write mode, reseed production, restore a backup into production, or invoke this operation during builds/startup. The existing migration CLI is used below only for its read-only `--check-postgres` preflight. The application continues using pooled `DATABASE_URL`. Operations use private direct `DATABASE_URL_UNPOOLED`, with client-side TLS and target validation.
 
 ## What changes
 
