@@ -77,7 +77,8 @@ def initialize_sqlite(db):
             p['learning_order'] = existing_orders.get(p['id'], p['learning_order'])
             db.execute('INSERT INTO problems VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,difficulty=excluded.difficulty,url=excluded.url,metadata=excluded.metadata', (p['id'],p['title'],p['difficulty'],p['url'],p['primary_concept_id'],p['learning_order'],p['grind_rank'],json.dumps(p)))
             baseline = (date(2026,10,15)+timedelta(days=baseline_order.index(p['id'])//6)).isoformat()
-            scheduled = (date(2026,10,15)+timedelta(days=(p['learning_order']-1)//6)).isoformat()
+            from .curriculum import ANCHOR, FOCUS_POSITION, DAILY_TARGET
+            scheduled = ((ANCHOR+timedelta(days=(p['learning_order']-FOCUS_POSITION)//DAILY_TARGET)) if p['learning_order']>=FOCUS_POSITION else (date(2026,10,15)+timedelta(days=(p['learning_order']-1)//6))).isoformat()
             db.execute('INSERT OR IGNORE INTO assignments VALUES(?,?,?,0)', (p['id'],baseline,scheduled))
             db.execute('INSERT OR IGNORE INTO progress(problem_id) VALUES(?)', (p['id'],))
             db.execute('INSERT OR IGNORE INTO problem_notes(problem_id) VALUES(?)', (p['id'],))

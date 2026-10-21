@@ -31,8 +31,8 @@ def today():
     ahead=[]
     if request.args.get('ahead')=='1':
         shown={p['id'] for p in eligible[:limit]}
-        ahead=[p for p in items if not p['first_attempt_at'] and p['id'] not in shown][:6]
-    return render_template('today.html',items=eligible[:limit],overflow=max(0,len(eligible)-limit),ahead=ahead,due=due,done=done,counts=s.counts(items),pace=s.pace(items,date(2026,10,27)),fallback=s.pace(items,date(2026,11,1)))
+        ahead=[p for p in s.focus_items(items) if not p['first_attempt_at'] and p['id'] not in shown][:6]
+    return render_template('today.html',earlier=s.earlier_unfinished(items),focus_active=s.focus_active(),items=eligible[:limit],overflow=max(0,len(eligible)-limit),ahead=ahead,due=due,done=done,counts=s.counts(items),pace=s.pace(items,date(2026,10,27)),fallback=s.pace(items,date(2026,11,1)))
 
 @bp.route('/concepts')
 @bp.route('/concepts/<cid>')

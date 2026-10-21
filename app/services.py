@@ -48,9 +48,29 @@ def pace(items, target):
 def new_today(items):
     return sum(local_day(p['first_attempt_at'])==today().isoformat() for p in items)
 
+def focus_active():
+    from .curriculum import ANCHOR
+    return today() >= ANCHOR
+
+
+def earlier_unfinished(items):
+    from .curriculum import order, FOCUS_POSITION
+    earlier = set(order()[:FOCUS_POSITION-1])
+    return [p for p in items if p['id'] in earlier and not p['first_attempt_at']] if focus_active() else []
+
+
+def focus_items(items):
+    from .curriculum import order, FOCUS_POSITION
+    earlier = set(order()[:FOCUS_POSITION-1])
+    return [p for p in items if p['id'] not in earlier] if focus_active() else items
+
+
 def queue(items):
-    eligible = [p for p in items if not p['first_attempt_at'] and p['scheduled_date']<=today().isoformat()]
+    eligible = [p for p in focus_items(items) if not p['first_attempt_at'] and p['scheduled_date']<=today().isoformat()]
+    if focus_active():
+        return sorted(eligible,key=lambda p:(p['learning_order'],p['grind_rank'],p['id']))
     return sorted(eligible,key=lambda p:(p['scheduled_date'],not p['manual_override'],p['learning_order'],p['grind_rank'],p['id']))
+
 
 def begin(db, token):
     if not isinstance(token,str) or not 16 <= len(token) <= 100:
@@ -128,10 +148,14 @@ def catch_up(token,reset=False):
     with db:
         if not begin(db,token):return
         items=rows()
+        candidates=focus_items(items)
         if reset:
-            db.execute('UPDATE assignments SET manual_override=0 WHERE problem_id IN (SELECT problem_id FROM progress WHERE first_attempt_at IS NULL)')
-        pending=[p for p in items if not p['first_attempt_at'] and (reset or not p['manual_override'])]
-        fixed=[p for p in items if not p['first_attempt_at'] and p['manual_override'] and not reset]
+            for p in candidates:
+                if not p['first_attempt_at']:
+                    db.execute('UPDATE assignments SET manual_override=0 WHERE problem_id=?',(p['id'],))
+        pending=[p for p in candidates if not p['first_attempt_at'] and (reset or not p['manual_override'])]
+        candidate_ids={p['id'] for p in candidates}
+        fixed=[p for p in items if not p['first_attempt_at'] and (p['id'] not in candidate_ids or (p['manual_override'] and not reset))]
         occupancy={}
         for p in fixed:occupancy[p['scheduled_date']]=occupancy.get(p['scheduled_date'],0)+1
         occupancy[today().isoformat()]=occupancy.get(today().isoformat(),0)+new_today(items)

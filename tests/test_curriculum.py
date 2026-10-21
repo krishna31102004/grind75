@@ -165,12 +165,13 @@ def test_old_backup_restores_without_reverting_order(prepared):
         assert curriculum.plan(db)['schedules']
 
 
-def test_schedule_slots_and_stale_metadata(prepared):
+def test_forward_anchor_and_stale_metadata(prepared):
     with prepared.app_context():
         db=get_db();before=curriculum.state(db)
         curriculum.apply(db,curriculum.plan(db));after=curriculum.state(db)
         from collections import Counter
-        assert Counter(a['scheduled_date'] for a in before['assignments'])==Counter(a['scheduled_date'] for a in after['assignments'])
+        changed=[a for a in after['assignments'] if a not in before['assignments']]
+        assert changed and all(a['scheduled_date']>='2026-10-20' for a in changed)
         slots=[p['scheduled_date'] for p in s.rows() if not p['first_attempt_at'] and not p['manual_override']]
         assert slots==sorted(slots)
         assert next(p for p in s.rows() if p['id']=='basic-calculator')['manual_override']==1
@@ -209,8 +210,9 @@ def test_postgres_operator_backup_plan_apply(pg_url,app,tmp_path):
     from urllib.parse import urlsplit
     database=urlsplit(pg_url).path.lstrip('/')
     base=[sys.executable,str(ROOT/'scripts/reorder_curriculum.py'),'--postgres','--expected-host','127.0.0.1','--expected-database',database,'--plan',str(tmp_path/'plan.json')]
-    dry=subprocess.run(base+['--dry-run'],env=env,capture_output=True,text=True)
+    dry=subprocess.run(base+['--dry-run','--backup',str(archive)],env=env,capture_output=True,text=True)
     assert dry.returncode==0,dry.stderr
+    assert 'Backup verified:' in dry.stdout
     # No approval flag: must fail before any mutation.
     blocked=subprocess.run(base+['--apply','--receipt',str(tmp_path/'blocked.json'),'--backup',str(archive)],env=env,capture_output=True,text=True)
     assert blocked.returncode!=0 and 'approval' in blocked.stderr
@@ -220,3 +222,145 @@ def test_postgres_operator_backup_plan_apply(pg_url,app,tmp_path):
     db=connect(pg_url)
     try:assert [r[0] for r in db.execute('SELECT id FROM problems ORDER BY learning_order')]==curriculum.order()
     finally:db.close()
+
+
+@pytest.fixture(params=['sqlite','postgresql'])
+def unfinished(request,app):
+    if request.param=='postgresql':
+        from scripts.migrate_to_postgres import migrate
+        url=request.getfixturevalue('pg_url');migrate(app.config['DATABASE'],url,mark_authority=False)
+        app=create_app(dict(app.config,DATABASE_URL=url))
+    app.config['NOW']='2026-10-20T17:00:00+00:00'
+    with app.app_context():
+        db=get_db();lr.migrate(db);legacy(db)
+    return app
+
+
+def test_fixed_anchor_with_honest_prior_entries(unfinished):
+    with unfinished.app_context():
+        db=get_db();before=curriculum.state(db);p=curriculum.plan(db)
+        assert p['anchor']=='2026-10-20' and p['focus']['eligible_for_anchor'] and p['applicable']
+        assert len(p['earlier_unfinished'])==13 and p['eligible_count']==62
+        assert [r['id'] for r in p['next_questions'][:6]]==curriculum.order()[13:19]
+        assert {r['scheduled_date'] for r in p['next_questions'][:6]}=={'2026-10-20'}
+        assert p['next_questions'][6]['scheduled_date']=='2026-10-21'
+        curriculum.apply(db,p)
+        after=curriculum.state(db)
+        for t in before:
+            if t not in ('problems','assignments'):assert before[t]==after[t],t
+        for row in before['assignments']:
+            if row['problem_id'] in curriculum.order()[:13]:assert row in after['assignments']
+        assert s.counts(s.rows())['attempted']==0 and s.new_today(s.rows())==0
+        assert s.queue(s.rows())[0]['id']=='diameter-of-binary-tree'
+        same=curriculum.plan(db);assert same['rows_to_update']==dict(problems=0,assignments=0)
+        unfinished.config['NOW']='2026-11-02T17:00:00+00:00'
+        assert curriculum.plan(db)==same  # Fixed anchor, never a rolling today.
+        curriculum.apply(db,same);assert curriculum.state(db)==after
+        initialize(db) if not hasattr(db,'backend') else None
+        assert curriculum.plan(db)==same
+    config=dict(unfinished.config)
+    restarted=create_app(config)
+    with restarted.app_context():assert s.queue(s.rows())[0]['id']=='diameter-of-binary-tree'
+
+
+def test_prior_entries_today_calendar_context_and_catchup(unfinished):
+    with unfinished.app_context():
+        db=get_db();curriculum.apply(db,curriculum.plan(db))
+        prior=[dict(r) for r in db.execute('SELECT * FROM assignments') if r['problem_id'] in curriculum.order()[:13]]
+        baseline={r['problem_id']:r['baseline_date'] for r in db.execute('SELECT * FROM assignments')}
+    c=unfinished.test_client();html=c.get('/').text
+    assert 'id="next-heading">Diameter of Binary Tree' in html and 'Earlier unfinished tracker entries' in html
+    context=c.get('/study-context?format=json').json
+    assert context['counts']['attempted']==0 and context['new_attempts_today']==0
+    assert len(context['earlier_unfinished'])==13 and context['curriculum_focus']['anchor']=='2026-10-20'
+    assert [p['learning_order'] for p in context['next_questions']]==list(range(14,20))
+    assert context['next_questions'][0]['scheduled_date']=='2026-10-20'
+    calendar=c.get('/calendar').text
+    assert 'id="day-2026-10-20"' in calendar and 'Original assignments' in calendar
+    assert c.get('/problem/diameter-of-binary-tree').status_code==200
+    with unfinished.app_context():
+        db=get_db();s.catch_up('post-anchor-catchup1',reset=True)
+        assert all(dict(db.execute('SELECT * FROM assignments WHERE problem_id=?',(r['problem_id'],)).fetchone())==r for r in prior)
+        assert {r['problem_id']:r['baseline_date'] for r in db.execute('SELECT * FROM assignments')}==baseline
+
+
+def test_preserved_capacity_and_actual_attempt_day(unfinished):
+    with unfinished.app_context():
+        db=get_db()
+        # One actual Chicago Oct20 attempt, two protected future assignments.
+        s.set_status('two-sum','attempted',False,'actual-attempt-reserve')
+        s.move('balanced-binary-tree','2026-10-20','preserve-manual-reserve')
+        with db:db.execute("UPDATE assignments SET scheduled_date='2026-10-20' WHERE problem_id='valid-anagram'")
+        plan=curriculum.plan(db)
+        assert plan['reserved_capacity']['2026-10-20']==3
+        assert plan['focus']['scheduled_date']=='2026-10-20'
+        assert [p['id'] for p in plan['resulting_schedule'][:3]]==['diameter-of-binary-tree','lowest-common-ancestor-of-a-binary-search-tree','flood-fill']
+        assert plan['resulting_schedule'][3]['scheduled_date']=='2026-10-21'
+        before=curriculum.state(db);curriculum.apply(db,plan)
+        for a in before['assignments']:
+            if a['problem_id'] in ('two-sum','valid-anagram','balanced-binary-tree'):assert a in curriculum.state(db)['assignments']
+        assert s.new_today(s.rows())==1
+
+
+def test_full_anchor_capacity_conflicts(unfinished):
+    with unfinished.app_context():
+        db=get_db()
+        for i,pid in enumerate(curriculum.order()[:6]):s.move(pid,'2026-10-20',f'capacity-protected-{i}')
+        p=curriculum.plan(db);assert not p['applicable'] and not p['focus']['eligible_for_anchor']
+        assert p['conflicts'] and p['reserved_capacity']['2026-10-20']==6
+        before=curriculum.state(db)
+        with pytest.raises(ValueError,match='focus conflict'):curriculum.apply(db,p)
+        assert curriculum.state(db)==before
+
+
+@pytest.mark.parametrize('evidence',['attempt','manual','status_history','review_event','review_state','move_history'])
+def test_focus_protection_conflicts_and_history_stales(unfinished,evidence):
+    with unfinished.app_context():
+        db=get_db();prior=curriculum.plan(db);pid='diameter-of-binary-tree'
+        with db:
+            if evidence=='attempt':db.execute("UPDATE progress SET first_attempt_at='2026-10-19T12:00:00+00:00',status='attempted' WHERE problem_id=?",(pid,))
+            elif evidence=='manual':db.execute('UPDATE assignments SET manual_override=1 WHERE problem_id=?',(pid,))
+            elif evidence=='status_history':db.execute('INSERT INTO activity_events VALUES(?,?,?,?,?)',('old-status',pid,'status','2026-10-19T12:00:00+00:00',json.dumps(dict(status='attempted'))))
+            elif evidence=='move_history':db.execute('INSERT INTO activity_events VALUES(?,?,?,?,?)',('old-move',pid,'move','2026-10-19T12:00:00+00:00','{}'))
+            elif evidence=='review_event':db.execute('INSERT INTO review_events VALUES(?,?,?,?,?)',('old-review',pid,'2026-10-19T12:00:00+00:00','independent','private review note'))
+            else:db.execute('INSERT INTO review_state VALUES(?,0,?,NULL)',(pid,'2026-10-21'))
+        before=curriculum.state(db);current=curriculum.plan(db)
+        assert not current['applicable'] and not current['focus']['eligible_for_anchor']
+        with pytest.raises(ValueError,match='stale'):curriculum.apply(db,prior)
+        with pytest.raises(ValueError,match='focus conflict'):curriculum.apply(db,current)
+        assert curriculum.state(db)==before
+
+
+def test_old_recycling_plan_cannot_apply(unfinished):
+    with unfinished.app_context():
+        db=get_db();old=dict(curriculum.plan(db),version='personal-curriculum-2026-10-20')
+        before=curriculum.state(db)
+        with pytest.raises(ValueError,match='stale'):curriculum.apply(db,old)
+        assert curriculum.state(db)==before
+
+
+def test_malformed_status_protected_and_history_capacity(unfinished):
+    with unfinished.app_context():
+        db=get_db()
+        with db:
+            db.execute('INSERT INTO activity_events VALUES(?,?,?,?,?)',('missing-status','diameter-of-binary-tree','status','2026-10-20T04:00:00+00:00','{}'))
+        assert not curriculum.plan(db)['applicable']
+        with db:
+            db.execute("DELETE FROM activity_events WHERE id='missing-status'")
+            db.execute('INSERT INTO activity_events VALUES(?,?,?,?,?)',('evidenced-attempt','valid-anagram','status','2026-10-21T03:00:00+00:00',json.dumps(dict(old='not_started',status='attempted',independent=False))))
+        p=curriculum.plan(db)
+        assert p['reserved_capacity']['2026-10-20']==1 #03:00UTC is Chicago Oct20.
+        assert 'valid-anagram' in {x['id'] for x in p['exclusions']}
+        assert p['focus']['eligible_for_anchor']
+        assert len([x for x in p['resulting_schedule'] if x['scheduled_date']=='2026-10-20'])==5
+
+
+def test_reset_status_history_reserves_without_faking_attempt(unfinished):
+    with unfinished.app_context():
+        db=get_db()
+        with db:db.execute('INSERT INTO activity_events VALUES(?,?,?,?,?)',('historical-reset','valid-anagram','status','2026-10-21T03:00:00+00:00',json.dumps(dict(old='attempted',status='not_started',independent=False))))
+        before=curriculum.state(db);p=curriculum.plan(db)
+        assert p['reserved_capacity']['2026-10-20']==1
+        curriculum.apply(db,p)
+        assert curriculum.state(db)['progress']==before['progress']
+        assert s.new_today(s.rows())==0 and s.counts(s.rows())['attempted']==0

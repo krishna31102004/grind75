@@ -37,12 +37,14 @@ def snapshot():
         concepts.append(dict(name=group[0]['concept_name'],total=len(group),**s.counts(group),weak=weak))
     due=sorted([p for p in questions if p['review_due'] and p['review_due']<=day],key=lambda p:(p['review_due'],p['learning_order']))
     return dict(date=day,timezone='America/Chicago',daily_target=6,total=75,
+        curriculum_focus=dict(start_position=14,anchor='2026-10-20',active=s.focus_active()),
+        earlier_unfinished=[lookup[p['id']] for p in s.earlier_unfinished(items)],
         counts=s.counts(items),new_attempts_today=s.new_today(items),
         milestones=dict(first_pass='2026-10-27',revision_end='2026-11-01',readiness='2026-11-02'),
         first_pass_pace=s.pace(items,date(2026,10,27)),fallback_pace=s.pace(items,date(2026,11,1)),
         today_assignments=[p for p in questions if p['scheduled_date']==day],
         next_questions=[lookup[p['id']] for p in next_items],
-        upcoming_questions=[lookup[p['id']] for p in sorted(items,key=lambda p:(p['scheduled_date'],not p['manual_override'],p['learning_order'],p['grind_rank'],p['id'])) if not p['first_attempt_at'] and p['scheduled_date']>day][:12],
+        upcoming_questions=[lookup[p['id']] for p in sorted(s.focus_items(items),key=lambda p:(p['scheduled_date'],not p['manual_override'],p['learning_order'],p['grind_rank'],p['id'])) if not p['first_attempt_at'] and p['scheduled_date']>day][:12],
         attempted_questions=[p for p in questions if p['attempted']],
         understood_questions=[p for p in questions if p['understood']],
         mastered_questions=[p for p in questions if p['independently_mastered']],

@@ -100,7 +100,7 @@ def test_schedule_catchup_deterministic_manual_history(app):
         baseline={p['id']:p['baseline_date'] for p in s.rows()}
         s.set_status(PID,'attempted',False,tok(1));attempt=item()['first_attempt_at']
         s.move('valid-anagram','2026-10-25',tok(2))
-        app.config['NOW']='2026-10-20T17:00:00+00:00'
+        app.config['NOW']='2026-10-21T17:00:00+00:00'
         assert len(s.queue(s.rows()))>6
         s.catch_up(tok(3));first=[(p['id'],p['scheduled_date']) for p in s.rows()]
         s.catch_up(tok(4));assert first==[(p['id'],p['scheduled_date']) for p in s.rows()]
@@ -126,7 +126,7 @@ def test_work_ahead_and_soft_target(app):
         s.set_status(ahead['id'],'attempted',False,tok(1))
         assert s.new_today(s.rows())==1
         assert next(p for p in s.rows() if p['id']==ahead['id'])['baseline_date']==original_baseline
-        assert ahead['scheduled_date']=='2026-10-27'
+        assert ahead['scheduled_date']=='2026-10-30'
         for i,p in enumerate(s.rows()[:7]):s.set_status(p['id'],'attempted',False,tok(i+2))
         assert s.new_today(s.rows())==8 and s.counts(s.rows())['attempted']==8
         assert len(s.rows())==75

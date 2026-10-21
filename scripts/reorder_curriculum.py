@@ -81,8 +81,9 @@ def main():
             db = connect(url)
             actual = db.execute('SELECT current_database()').fetchone()[0]
             if actual != args.expected_database: raise ValueError('Connected database does not match the expected target.')
-            if args.apply:
+            if args.backup:
                 backup_sha = verify_backup(args.backup, actual, curriculum.tables(db))
+                print('Backup verified: age, private permissions, database and all table-data entries; sha256='+backup_sha)
         else:
             path = Path(args.sqlite).expanduser().resolve()
             if not path.is_file(): raise ValueError('Explicit SQLite file does not exist.')
@@ -106,9 +107,22 @@ def main():
                     result = curriculum.plan(db)
             private_json(args.plan, result)
             for row in result['mapping']: print(f"{row['old']:02} -> {row['new']:02} {row['id']}")
+            print(f"Fixed schedule anchor: {result['anchor']} ({result['timezone']}); soft target6/day")
+            print(f"#14 eligible for anchor: {result['focus']['eligible_for_anchor']}; proposed date={result['focus']['scheduled_date']}")
+            print('Protected assignments excluded:')
+            for row in result['exclusions']: print(f"#{row['learning_order']:02} {row['id']} retains {row['scheduled_date']}: {'; '.join(row['reasons'])}")
+            print('Earlier unfinished #1–13 (not assumed completed):')
+            for row in result['earlier_unfinished']: print(f"#{row['learning_order']:02} {row['id']}: {row['status']}, retained {row['scheduled_date']}")
             print('Eligible schedule changes:')
             for row in result['schedules']: print(f"{row['id']}: {row['old']} -> {row['new']}")
-            print(f"Read-only plan written; {len(result['schedules'])} eligible dates change. Review the complete plan before approval.")
+            print('Resulting next eligible study questions:')
+            for row in result['next_questions']: print(f"#{row['learning_order']:02} {row['id']}: {row['scheduled_date']}")
+            print(f"Rows to update: problems={result['rows_to_update']['problems']}, assignments={result['rows_to_update']['assignments']}")
+            print('Write set: learning_order/metadata copy and listed eligible scheduled_date only. History, reviews, learning records and all other data are excluded.')
+            print('Read-only plan written; review the complete plan before approval. Old slot-recycling plans are superseded.')
+            if not result['applicable']:
+                for conflict in result['conflicts']: print('CONFLICT: '+conflict)
+                raise SystemExit('Plan is blocked; stop for clarification. No changes made.')
         else:
             approved = json.loads(Path(args.plan).expanduser().read_text())
             # Reserve a writable private receipt before any database mutation.
