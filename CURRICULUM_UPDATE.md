@@ -1,5 +1,7 @@
 # Final personal curriculum — October 20, 2026
 
+**Release complete:** the owner-approved fixed-anchor plan was applied transactionally and the feature was released to Production. All75 positions match; the post-apply plan requires zero further date changes. See PROGRESS.md for receipt/deployment evidence. Do not rerun this completed operation as a startup or deployment step.
+
 This is an explicit data operation, **not a schema migration**. Never invoke either previous migration in write mode, reseed production, restore a backup into production, or invoke this operation during builds/startup. The existing migration CLI is used below only for its read-only `--check-postgres` preflight. The application continues using pooled `DATABASE_URL`. Operations use private direct `DATABASE_URL_UNPOOLED`, with client-side TLS and target validation.
 
 ## Current policy — fixed October20 anchor (supersedes slot recycling)
@@ -18,9 +20,9 @@ From October20, Today/Work Ahead prioritize the current #14+ curriculum. Earlier
 
 `data/baseline_order.json` freezes the pre-update original assignment dates independently of curriculum. This keeps existing JSON backups valid. Existing SQLite startup neither applies nor reverts the curriculum; PostgreSQL startup performs no writes. Fresh databases use the new curriculum for current assignments while retaining frozen original baseline dates. Restoring an older JSON backup intentionally restores its scheduled dates, but does not change the curriculum; review a fresh reconciliation plan afterward if desired.
 
-## Production approval gate — stop after the new read-only plan
+## Production procedure — completed for this release
 
-This checkpoint does not authorize `--apply`, main promotion/push or Vercel deployment. Steps4–6 are a later procedure only after the owner approves the exact new plan. Existing backups must still meet the24-hour rule at the time of any later apply.
+The implementation originally stopped after a read-only plan. The owner subsequently approved that exact plan, and steps4–6 completed successfully. The commands below document the procedure; they are not instructions to repeat the completed update. Any future plan needs its own authorization, target check and fresh-enough backup.
 
 The feature branch can be tested/committed before this gate. Hold main promotion until the production backup, dry-run and approval are complete. The existing deployed app can read the reordered rows without schema changes.
 
