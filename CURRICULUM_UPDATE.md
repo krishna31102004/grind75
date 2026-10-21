@@ -31,6 +31,8 @@ The feature branch can be tested/committed before this gate. Hold main promotion
    export PGSSLROOTCERT="$(brew --prefix ca-certificates)/share/ca-certificates/cacert.pem"
    ```
 
+   Ensure matching/new-enough client tools are on the command PATH. On this Mac the existing Homebrew libpq18.6 tools are available with `export PATH="$(brew --prefix libpq)/bin:$PATH"`; this changes only the current shell, not the deployed application.
+
    Preflight and backup commands:
 
    ```sh
