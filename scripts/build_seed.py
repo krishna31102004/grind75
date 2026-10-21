@@ -24,10 +24,10 @@ groups = {
 published=json.loads((ROOT/'data/sources/QuestionGroups.json').read_text())
 rows=[{k:p[k] for k in ('url','title','difficulty')} for week in published.values() for p in week]
 assert rows==json.loads((ROOT/'data/sources/published75.json').read_text()), 'Published JSON and saved rendered page disagree'
-# Breadth across basic patterns first, then deeper questions within each concept.
-early=[1,7,15,24,5,8,2,3,18,12,22,6,23,9,17,19,20,14,13,25,30,31,32,11,21,10,33,40,28,41,35]
-rest=[r for group in groups.values() for r in group[1] if r not in early]
-order=early+rest
+# Personal curriculum is independent of source rank and frozen assignment baselines.
+curriculum=json.loads((ROOT/'data/curriculum.json').read_text())
+assert len(curriculum)==len(set(curriculum))==75
+order=[next(i for i,r in enumerate(rows,1) if r['url'].rstrip('/').split('/')[-1]==pid) for pid in curriculum]
 assert len(order)==len(set(order))==75
 concepts=[]
 for idx,(cid,(name,ranks,description,body,prereq,template)) in enumerate(groups.items()):

@@ -233,3 +233,7 @@ The test suite exercises SQLite and **real isolated local PostgreSQL14**, includ
 ```
 
 Without `TEST_DATABASE_URL`, PostgreSQL-specific cases are explicitly skipped. For the complete suite, point that variable only at a disposable local PostgreSQL test database; the fixture creates/drops uniquely named schemas and rejects remote hosts. See PROGRESS.md for actual counts and reviewer/browser evidence. Neon connectivity, Vercel builds, HTTPS hosting and survival across an actual Vercel redeployment remain **unverified until you deploy**.
+
+### Personal curriculum update
+
+See [CURRICULUM_UPDATE.md](CURRICULUM_UPDATE.md) for the explicit, backup-gated75-question ordering operation. Editing the seed alone does not change an existing database. Never run this automatically during startup/build or rerun either database migration.

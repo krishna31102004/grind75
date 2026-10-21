@@ -20,7 +20,7 @@ def snapshot():
     questions=[]
     for p in items:
         questions.append(dict(
-            id=p['id'],title=p['title'],url=p['url'],tracker_path=url_for('main.problem',pid=p['id']),
+            id=p['id'],learning_order=p['learning_order'],title=p['title'],url=p['url'],tracker_path=url_for('main.problem',pid=p['id']),
             concept=p['concept_name'],status=s.STATUSES[p['status']],
             attempted=bool(p['first_attempt_at']),first_attempt_date=s.local_day(p['first_attempt_at']),
             understood=p['status']=='understood',independently_mastered=bool(p['mastered']),
@@ -35,7 +35,7 @@ def snapshot():
         group=[p for p in items if p['concept_id']==cid]
         weak=sum(lookup[p['id']]['needs_review'] for p in group)
         concepts.append(dict(name=group[0]['concept_name'],total=len(group),**s.counts(group),weak=weak))
-    due=sorted([p for p in questions if p['review_due'] and p['review_due']<=day],key=lambda p:(p['review_due'],p['title']))
+    due=sorted([p for p in questions if p['review_due'] and p['review_due']<=day],key=lambda p:(p['review_due'],p['learning_order']))
     return dict(date=day,timezone='America/Chicago',daily_target=6,total=75,
         counts=s.counts(items),new_attempts_today=s.new_today(items),
         milestones=dict(first_pass='2026-10-27',revision_end='2026-11-01',readiness='2026-11-02'),

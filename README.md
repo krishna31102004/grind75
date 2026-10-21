@@ -76,3 +76,7 @@ python3 scripts/check_ui.py
 ```
 
 This command creates its own temporary SQLite database, synthetic credentials and loopback server; it accepts no external database or app URL. It checks full-content imports/edits/downloads, normal study workflows, and both themes at1440/1024/768/390/320px. Screenshots contain synthetic data and are saved under ignored `docs/screenshots/redesign/`. The UI redesign requires no production database migration; production is already on additive feature schema3.
+
+### Personal curriculum update
+
+See [CURRICULUM_UPDATE.md](CURRICULUM_UPDATE.md) for the explicit, backup-gated75-question ordering operation. Editing the seed alone does not change an existing database. Never run this automatically during startup/build or rerun either database migration.

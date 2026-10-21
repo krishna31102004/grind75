@@ -60,17 +60,25 @@ def initialize_sqlite(db):
             db.execute(f"CREATE TRIGGER IF NOT EXISTS nonnull_{table}_{action} BEFORE {action} ON {table} WHEN NEW.{column} IS NULL BEGIN SELECT RAISE(ABORT, 'identifier cannot be null'); END")
     problems = json.loads((ROOT/'data/grind75.json').read_text())
     concepts = json.loads((ROOT/'data/concepts.json').read_text())
-    existing = {r[0] for r in db.execute('SELECT id FROM problems')}
+    existing_orders = {r[0]:r[1] for r in db.execute('SELECT id,learning_order FROM problems')}
+    existing = set(existing_orders)
+    baseline_order = json.loads((ROOT/'data/baseline_order.json').read_text())
+    if len(baseline_order) != 75 or len(set(baseline_order)) != 75:
+        raise RuntimeError('Invalid frozen baseline assignment inventory.')
     expected = {p['id'] for p in problems}
     if existing and existing != expected:
         raise RuntimeError('Dataset identities changed; refusing to modify personal progress.')
     with db:
         for c in concepts:
             db.execute('INSERT INTO concepts VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, content=excluded.content', (c['id'],c['name'],c['display_order'],json.dumps(c)))
-        for p in problems:
+        for definition in problems:
+            # Existing databases change curriculum only through the explicit operation.
+            p = dict(definition)
+            p['learning_order'] = existing_orders.get(p['id'], p['learning_order'])
             db.execute('INSERT INTO problems VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,difficulty=excluded.difficulty,url=excluded.url,metadata=excluded.metadata', (p['id'],p['title'],p['difficulty'],p['url'],p['primary_concept_id'],p['learning_order'],p['grind_rank'],json.dumps(p)))
-            baseline = (date(2026,10,15)+timedelta(days=(p['learning_order']-1)//6)).isoformat()
-            db.execute('INSERT OR IGNORE INTO assignments VALUES(?,?,?,0)', (p['id'],baseline,baseline))
+            baseline = (date(2026,10,15)+timedelta(days=baseline_order.index(p['id'])//6)).isoformat()
+            scheduled = (date(2026,10,15)+timedelta(days=(p['learning_order']-1)//6)).isoformat()
+            db.execute('INSERT OR IGNORE INTO assignments VALUES(?,?,?,0)', (p['id'],baseline,scheduled))
             db.execute('INSERT OR IGNORE INTO progress(problem_id) VALUES(?)', (p['id'],))
             db.execute('INSERT OR IGNORE INTO problem_notes(problem_id) VALUES(?)', (p['id'],))
         for k,v in [('timezone','America/Chicago'),('daily_target','6'),('seed_version',problems[0]['source_version'])]:

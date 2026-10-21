@@ -41,3 +41,7 @@ From the project root:
 ```
 
 The seed script uses the saved official JSON and asserts agreement with the saved rendered-page extraction. No external requests occur during rebuild or normal app startup. Identity changes are rejected during initialization, preserving personal data. The authoring script is original educational prose; no paid editorials or solution dumps are copied. Concept taxonomy, primers, guides and learning order are original application content, separate from source metadata.
+
+## Personal curriculum — October20,2026
+
+`curriculum.json` defines the owner-approved75-ID teaching sequence, independent of published Grind rank. Contains Duplicate #3 / Ransom Note #4 was explicitly confirmed by the owner. The frozen `baseline_order.json` retains pre-update assignment baselines and backup compatibility. Only `learning_order` in the seed changes; all source fields remain unchanged. Existing databases require the explicit operation documented in `CURRICULUM_UPDATE.md`; startup never silently applies it.

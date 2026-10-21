@@ -122,9 +122,11 @@ def test_catchup_reset_manual_explicit(app):
 def test_work_ahead_and_soft_target(app):
     with app.app_context():
         ahead=next(p for p in s.rows() if p['learning_order']==75)
+        original_baseline=ahead['baseline_date']
         s.set_status(ahead['id'],'attempted',False,tok(1))
         assert s.new_today(s.rows())==1
-        assert next(p for p in s.rows() if p['id']==ahead['id'])['baseline_date']=='2026-10-27'
+        assert next(p for p in s.rows() if p['id']==ahead['id'])['baseline_date']==original_baseline
+        assert ahead['scheduled_date']=='2026-10-27'
         for i,p in enumerate(s.rows()[:7]):s.set_status(p['id'],'attempted',False,tok(i+2))
         assert s.new_today(s.rows())==8 and s.counts(s.rows())['attempted']==8
         assert len(s.rows())==75

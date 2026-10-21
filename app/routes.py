@@ -27,7 +27,7 @@ def context():
 def today():
     items=s.rows();eligible=s.queue(items);done=s.new_today(items)
     limit=max(0,6-done)
-    due=[p for p in items if p['next_due_date'] and p['next_due_date']<=s.today().isoformat()]
+    due=sorted([p for p in items if p['next_due_date'] and p['next_due_date']<=s.today().isoformat()], key=lambda p:(p['next_due_date'],p['learning_order']))
     ahead=[]
     if request.args.get('ahead')=='1':
         shown={p['id'] for p in eligible[:limit]}
@@ -234,9 +234,9 @@ def concept_notes(cid):
 @bp.route('/review')
 def reviews():
     items=s.rows();day=s.today().isoformat()
-    due=[p for p in items if p['next_due_date'] and p['next_due_date']<=day]
+    due=sorted([p for p in items if p['next_due_date'] and p['next_due_date']<=day], key=lambda p:(p['next_due_date'],p['learning_order']))
     weak=[p for p in items if p['first_attempt_at'] and (p['status'] in ('hints','needs_review') or (p['confidence'] and p['confidence']<=2)) and p not in due]
-    future=[p for p in items if p['next_due_date'] and p['next_due_date']>day and p not in weak]
+    future=sorted([p for p in items if p['next_due_date'] and p['next_due_date']>day and p not in weak], key=lambda p:(p['next_due_date'],p['learning_order']))
     if lr.migration_ready():
         saved={r[0] for r in get_db().execute('SELECT problem_id FROM learning_records')}
         for group in (due,weak,future):
