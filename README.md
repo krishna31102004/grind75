@@ -16,9 +16,9 @@ After migration, PostgreSQL is authoritative. Keep `DATABASE_URL` and login secr
 
 ## Daily study
 
-Open Today → concept primer → LeetCode → independent attempt → quick brute-force explanation → optimization → short takeaway → review. Six new questions/day is a flexible target. Reviews never count as new attempts or automatically mark understanding. An explicit independent solve earns mastery; hinted/failed reviews clear mastery and schedule retry.
+Open Today → concept primer → LeetCode → independent attempt → assess Green/Yellow/Red → save an optional takeaway → review. Today presents five questions from the current active study day. A day remains active until you deliberately advance it; elapsed calendar days never skip unfinished days. Flexible days are for rest, catch-up or revision. Reviews use real dates in America/Chicago and never count as first-pass attempts.
 
-Original baseline dates remain immutable. The remaining personal curriculum starts October20,2026 at #14 Diameter of Binary Tree, with six/day as a soft target; unfinished #1–13 entries remain separately accessible. October28–November1 emphasizes revision; November2 is a readiness checkpoint with no lockout. Work ahead and catch-up preserve original dates/history. Manual moves are in each problem's Assignment & activity history section. All study dates use America/Chicago.
+Green requires explicit confirmation that the approach was independently derived, correct, and explainable with complexity. Yellow means help was needed; Red means relearning is needed. Neither earns independent mastery. Historical status and activity remain visible without being reclassified. Assessment is self-reported; the app does not execute or grade code.
 
 ## Deploy yourself to Vercel
 
@@ -56,7 +56,7 @@ After explicit schema migration version3, each problem has a separate **My Learn
 
 Use **My Learning Records → Import a ChatGPT batch** to paste or upload version2 JSON (legacy version1 remains accepted). Review every matched problem before confirming. Existing nonempty fields stay unless you select a particular replacement; imported empty strings never clear saved values. The batch limit is20 records/1 MiB for version2 (legacy version1:256 KiB),8,000 characters per reasoning field and65,536 characters per Python solution. Export one, selected or all personal records in the same format. Full application backup/restore is a separate workflow.
 
-Personal records require authentication and are excluded from public Study Context sharing. Review pages show your recall question first and hide mistakes/corrections behind an explicit reveal. After migration4, full backups use version3 and include reference solutions. Version1 restores preserve current learning records/solutions; version2 replaces learning records without solutions and requires an extra acknowledgement before clearing saved solutions. Every restore requires REPLACE and retains a safety copy.
+Personal records require authentication and are excluded from public Study Context sharing. Review pages show your recall question first and hide mistakes/corrections behind an explicit reveal. After migration4, full backups use version3 and include reference solutions; after migration5, version4 also includes the active curriculum, archive and assessment history. A v1–v3 restore on a v5 database is blocked when assessment events exist because those formats cannot represent that history. Every restore requires REPLACE and retains a safety copy.
 
 The additive SQLite/PostgreSQL migration is explicit; startup and Vercel builds never apply it. Follow [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md#personal-learning-records-schema-migration). Do not migrate production until a private, verified full database backup exists.
 
@@ -77,9 +77,9 @@ python3 scripts/check_ui.py
 
 This command creates its own temporary SQLite database, synthetic credentials and loopback server; it accepts no external database or app URL. It checks full-content imports/edits/downloads, normal study workflows, and both themes at1440/1024/768/390/320px. Screenshots contain synthetic data and are saved under ignored `docs/screenshots/redesign/`. The prior UI redesign required no schema change. Python reference solutions require explicit additive migration4 before enabling solution storage.
 
-### Personal curriculum update
+### Active curriculum
 
-See [CURRICULUM_UPDATE.md](CURRICULUM_UPDATE.md) for the explicit, backup-gated75-question ordering operation. Editing the seed alone does not change an existing database. Never run this automatically during startup/build or rerun either database migration.
+The active plan is version2: exactly75 questions across15 active study days, five per day, plus six flexible days. Seven replacement questions have new stable identities; removed questions remain archived with their attached records. Curriculum mappings are versioned separately from problem identity. See [CURRICULUM_V2_RELEASE.md](CURRICULUM_V2_RELEASE.md) for the explicit migration and release gate. Migration5 is never run automatically during startup or builds.
 
 ## Python Reference Solutions
 

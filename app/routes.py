@@ -21,10 +21,37 @@ def context():
     def records_available():
         try:return lr.migration_ready()
         except (RuntimeError,sqlite3.Error,psycopg.Error):return False
-    return dict(learning_records_available=records_available,statuses=s.STATUSES,csrf=csrf,token=lambda:secrets.token_hex(20),local_day=s.local_day,activity_description=s.activity_description,study_today=s.today())
+    def versioned_curriculum_available():
+        from . import plans
+        try:return plans.ready(get_db())
+        except (RuntimeError,sqlite3.Error,psycopg.Error):return False
+    return dict(learning_records_available=records_available,versioned_curriculum_available=versioned_curriculum_available,statuses=s.STATUSES,csrf=csrf,token=lambda:secrets.token_hex(20),local_day=s.local_day,activity_description=s.activity_description,study_today=s.today())
 
 @bp.route('/')
 def today():
+    from . import plans
+    db=get_db()
+    if plans.ready(db):
+        day_number=plans.current_day(db);curriculum=plans.load()
+        day=next(d for d in curriculum['days'] if d['day']==day_number)
+        items=plans.entries_for_day(day_number,db)
+        assessments=plans.latest_assessments(db)
+        for item in items:
+            assessment=assessments.get(item['problem_id'])
+            item['assessment']=assessment['assessment'] if assessment else 'not_assessed'
+            item['assessment_takeaway']=assessment['takeaway'] if assessment else ''
+        attempted=sum(bool(p['curriculum_attempted']) for p in items)
+        next_problem=next((p for p in items if not p['curriculum_attempted']),None)
+        all_items=s.rows();counts=s.counts(all_items)
+        due=sorted([p for p in all_items if p['next_due_date'] and p['next_due_date']<=s.today().isoformat()],key=lambda p:(p['next_due_date'],p['day_number'],p['slot']))
+        following=plans.next_active_day(day_number,curriculum)
+        archived=plans.archived_rows(db)
+        for item in archived:
+            item['id']=item.get('problem_id',item.get('id'));item['tracker_number']=None
+        earlier=[p for p in archived if not p['first_attempt_at']]
+        return render_template('today_v2.html',day=day,items=items,attempted=attempted,next_problem=next_problem,
+            counts=counts,due=due,current_day=day_number,following=following,token=secrets.token_hex(20),csrf=csrf(),
+            all_complete=day['active_index']==15 and attempted==5,earlier=earlier)
     items=s.rows();eligible=s.queue(items);done=s.new_today(items)
     limit=max(0,6-done)
     due=sorted([p for p in items if p['next_due_date'] and p['next_due_date']<=s.today().isoformat()], key=lambda p:(p['next_due_date'],p['learning_order']))
@@ -33,6 +60,43 @@ def today():
         shown={p['id'] for p in eligible[:limit]}
         ahead=[p for p in s.focus_items(items) if not p['first_attempt_at'] and p['id'] not in shown][:6]
     return render_template('today.html',earlier=s.earlier_unfinished(items),focus_active=s.focus_active(),items=eligible[:limit],overflow=max(0,len(eligible)-limit),ahead=ahead,due=due,done=done,counts=s.counts(items),pace=s.pace(items,date(2026,10,27)),fallback=s.pace(items,date(2026,11,1)))
+
+
+@bp.route('/plan')
+def plan():
+    from . import plans
+    db=get_db()
+    if not plans.ready(db):return render_template('plan_unavailable.html')
+    curriculum=plans.load();current=plans.current_day(db)
+    try:selected=int(request.args.get('day',current))
+    except (ValueError,TypeError):abort(404)
+    day=next((d for d in curriculum['days'] if d['day']==selected),None)
+    if not day:abort(404)
+    items=plans.entries_for_day(selected,db)
+    assessments=plans.latest_assessments(db)
+    for item in items:
+        assessment=assessments.get(item['problem_id'])
+        item['assessment']=assessment['assessment'] if assessment else 'not_assessed'
+    attempted=sum(bool(p['curriculum_attempted']) for p in items)
+    days=[]
+    for row in curriculum['days']:
+        row=dict(row);row['attempted']=sum(bool(p['curriculum_attempted']) for p in plans.entries_for_day(row['day'],db)) if row['kind']=='active' else 0
+        row['is_current']=row['day']==current;row['is_selected']=row['day']==selected;days.append(row)
+    return render_template('plan.html',days=days,day=day,items=items,attempted=attempted,current_day=current,
+        can_advance=selected==current and attempted==5 and plans.next_active_day(current,curriculum) is not None,
+        following=plans.next_active_day(current,curriculum),finished=selected==current and attempted==5 and day['active_index']==15,
+        token=secrets.token_hex(20),csrf=csrf())
+
+
+@bp.route('/plan/advance',methods=['POST'])
+def advance_plan():
+    from . import plans
+    try:
+        day=s.advance_active_day(request.form.get('token'))
+        if day==19 and plans.day_complete(day):flash('All 15 active study days are complete. Your history and assessments remain available.','success')
+        else:flash(f'Active study day is now Day {day}.','success')
+    except ValueError as exc:flash(str(exc),'error')
+    return redirect(url_for('main.plan'))
 
 @bp.route('/concepts')
 @bp.route('/concepts/<cid>')
@@ -47,7 +111,7 @@ def concepts(cid=None):
         if not concept:abort(404)
         items=[p for p in s.rows() if p['concept_id']==cid]
         if request.args.get('difficulty'):items=[p for p in items if p['difficulty']==request.args['difficulty']]
-        if request.args.get('status'):items=[p for p in items if p['status']==request.args['status']]
+        if request.args.get('status'):items=[p for p in items if p.get('assessment')==request.args['status']]
         note=get_db().execute('SELECT note FROM concept_notes WHERE concept_id=?',(cid,)).fetchone()
         return render_template('concept.html',concept=concept,items=items,note=note[0] if note else '')
     return render_template('concepts.html',concepts=concepts)
@@ -70,19 +134,55 @@ def cheatsheets():
         for p in items:p['learning_record']=None
     return render_template('list.html',heading='Cheat Sheets',intro='Concept primers are always available. General guides and your personal learning records are kept separate.',items=items,search=True,learning_records_ready=lr.migration_ready())
 
+@bp.route('/library')
+def library():
+    items=s.rows(include_archived=request.args.get('archived')=='1');q=request.args.get('q','').casefold().strip()
+    if q:items=[p for p in items if q in (p['title']+' '+p['concept_name']).casefold()]
+    difficulty=request.args.get('difficulty');assessment=request.args.get('assessment')
+    if difficulty:items=[p for p in items if p['difficulty']==difficulty]
+    if assessment:items=[p for p in items if p.get('assessment','not_assessed')==assessment]
+    if request.args.get('due')=='1':items=[p for p in items if p.get('next_due_date') and p['next_due_date']<=s.today().isoformat()]
+    saved={r[0] for r in get_db().execute('SELECT problem_id FROM learning_records')} if lr.migration_ready() else set()
+    if request.args.get('saved')=='1':items=[p for p in items if p['id'] in saved]
+    return render_template('library.html',items=items,query=request.args.get('q',''),difficulty=difficulty or '',assessment=assessment or '',learning_records_ready=lr.migration_ready())
+
 @bp.route('/problem/<pid>')
 def problem(pid):
-    p=next((p for p in s.rows() if p['id']==pid),None)
+    from . import plans
+    ready=plans.ready(get_db())
+    p=next((p for p in s.rows(include_archived=ready) if p['id']==pid),None)
     if p is None:abort(404)
     revealed=get_db().execute("SELECT 1 FROM activity_events WHERE problem_id=? AND kind='reveal' LIMIT 1",(pid,)).fetchone()
     unlocked=bool(p['first_attempt_at'] or revealed)
     guide=None
     if unlocked:
-        guides=json.loads((ROOT/'data/problem_guides.json').read_text());guide=guides[pid]
+        guides=json.loads((ROOT/'data/problem_guides.json').read_text())
+        additions=ROOT/'data/problem_guides_v2_additions.json'
+        if additions.exists():guides.update(json.loads(additions.read_text(encoding='utf-8')))
+        guide=guides.get(pid)
     history=[dict(r) for r in get_db().execute('SELECT * FROM activity_events WHERE problem_id=? ORDER BY at DESC,id DESC',(pid,))]
     reviews=[dict(r) for r in get_db().execute('SELECT * FROM review_events WHERE problem_id=? ORDER BY at DESC,id DESC',(pid,))]
     record=lr.get_record(get_db(),pid) if lr.migration_ready() else None
-    return render_template('problem.html',p=p,guide=guide,history=history,reviews=reviews,learning_record=record,learning_records_ready=lr.migration_ready(),solutions_ready=lr.solution_ready(get_db()))
+    curriculum_position=None
+    if ready:
+        curriculum_position=next((e for e in plans.load()['entries'] if e['problem_id']==pid),None)
+        if curriculum_position:
+            p['tracker_number']=curriculum_position['tracker_number'];p['day_number']=curriculum_position['day_number'];p['active_index']=curriculum_position['active_index'];p['topic']=curriculum_position['topic']
+            p['assessment']=plans.latest_assessments(get_db()).get(pid,{}).get('assessment','not_assessed')
+    return render_template('problem_v2.html' if ready else 'problem.html',p=p,guide=guide,history=history,reviews=reviews,learning_record=record,learning_records_ready=lr.migration_ready(),solutions_ready=lr.solution_ready(get_db()),curriculum_ready=ready,assessment=p.get('assessment','not_assessed'))
+
+
+@bp.route('/problem/<pid>/assessment',methods=['POST'])
+def record_assessment(pid):
+    if not get_db().execute('SELECT 1 FROM problems WHERE id=?',(pid,)).fetchone():abort(404)
+    color=request.form.get('assessment')
+    try:
+        if color=='not_assessed':
+            raise ValueError('Assessment history is preserved. Choose Green, Yellow, or Red to record a new result.')
+        s.assessment(pid,color,request.form.get('green_attested')=='yes',request.form.get('takeaway',''),request.form.get('token'),request.form.get('context','first_pass'))
+        flash('Assessment saved. Existing status and mastery history remain intact.','success')
+    except ValueError as exc:flash(str(exc),'error')
+    return redirect(url_for('main.problem',pid=pid)+'#assessment')
 
 def require_learning_records():
     if not lr.migration_ready():
@@ -207,8 +307,11 @@ def learning_records_export():
 @bp.route('/review/<pid>')
 def personalized_review(pid):
     if not lr.migration_ready():abort(404)
-    p=next((p for p in s.rows() if p['id']==pid),None)
+    from . import plans
+    p=next((p for p in s.rows(include_archived=plans.ready(get_db())) if p['id']==pid),None)
     if p is None:abort(404)
+    if plans.ready(get_db()):
+        return render_template('personalized_review_v2.html',p=p,record=lr.get_record(get_db(),pid),solutions_ready=lr.solution_ready(get_db()))
     return render_template('personalized_review.html',p=p,record=lr.get_record(get_db(),pid),solutions_ready=lr.solution_ready(get_db()))
 
 @bp.route('/problem/<pid>/<action>',methods=['POST'])
@@ -216,9 +319,15 @@ def update(pid,action):
     if not get_db().execute('SELECT 1 FROM problems WHERE id=?',(pid,)).fetchone():abort(404)
     token=request.form.get('token');db=get_db()
     try:
-        if action=='status':s.set_status(pid,request.form.get('status'),request.form.get('independent')=='yes',token)
+        if action=='status':
+            from . import plans
+            if plans.ready(db):raise ValueError('Use the Green, Yellow, or Red assessment on the problem page. Historical status remains unchanged.')
+            s.set_status(pid,request.form.get('status'),request.form.get('independent')=='yes',token)
         elif action=='notes':s.save_notes(pid,request.form,token)
-        elif action=='review':s.review(pid,request.form.get('result'),request.form.get('note',''),token)
+        elif action=='review':
+            from . import plans
+            if plans.ready(db):raise ValueError('Use the recall assessment on the problem page so Green is explicitly confirmed.')
+            s.review(pid,request.form.get('result'),request.form.get('note',''),token)
         elif action=='move':s.move(pid,request.form.get('date'),token)
         elif action=='review_schedule':
             due=s.valid_date(request.form.get('date')).isoformat()
@@ -253,6 +362,22 @@ def concept_notes(cid):
 @bp.route('/review')
 def reviews():
     items=s.rows();day=s.today().isoformat()
+    if items and 'assessment' in items[0]:
+        index={p['id']:p['learning_order'] for p in items}
+        due=sorted([p for p in items if p['next_due_date'] and p['next_due_date']<=day],key=lambda p:(p['next_due_date'],index[p['id']]))
+        due_ids={p['id'] for p in due}
+        weak=sorted([p for p in items if p['first_attempt_at'] and p['assessment'] in ('yellow','red') and p['id'] not in due_ids],key=lambda p:index[p['id']])
+        weak_ids={p['id'] for p in weak}|due_ids
+        future=sorted([p for p in items if p['next_due_date'] and p['next_due_date']>day and p['id'] not in weak_ids],key=lambda p:(p['next_due_date'],index[p['id']]))
+        saved={r[0] for r in get_db().execute('SELECT problem_id FROM learning_records')} if lr.migration_ready() else set()
+        for group in (due,weak,future):
+            for p in group:p['has_learning_record']=p['id'] in saved
+        by_concept={}
+        for p in items:
+            if p['assessment'] in ('yellow','red'):
+                by_concept[p['concept_name']]=by_concept.get(p['concept_name'],0)+1
+        weak_concepts=sorted([dict(name=name,count=count) for name,count in by_concept.items()],key=lambda c:(-c['count'],c['name']))
+        return render_template('review_v2.html',due=due,weak=weak,future=future,weak_concepts=weak_concepts)
     due=sorted([p for p in items if p['next_due_date'] and p['next_due_date']<=day], key=lambda p:(p['next_due_date'],p['learning_order']))
     weak=[p for p in items if p['first_attempt_at'] and (p['status'] in ('hints','needs_review') or (p['confidence'] and p['confidence']<=2)) and p not in due]
     future=sorted([p for p in items if p['next_due_date'] and p['next_due_date']>day and p not in weak], key=lambda p:(p['next_due_date'],p['learning_order']))
@@ -267,6 +392,17 @@ def reviews():
 
 @bp.route('/calendar')
 def calendar():
+    from . import plans
+    if plans.ready(get_db()):
+        events=[dict(r) for r in get_db().execute('''SELECT e.*,p.title FROM activity_events e LEFT JOIN problems p ON e.problem_id=p.id ORDER BY e.at DESC LIMIT 200''')]
+        grouped={}
+        for event in events:
+            if event['at']:
+                day=s.local_day(event['at']);grouped.setdefault(day,[]).append(event)
+        due={}
+        for item in s.rows(include_archived=True):
+            if item['next_due_date']:due.setdefault(item['next_due_date'],[]).append(item)
+        return render_template('calendar_v2.html',activity=sorted(grouped.items(),reverse=True),reviews=sorted(due.items()),today=s.today().isoformat(),current_day=plans.current_day(get_db()))
     items=s.rows();days={}
     events=[dict(r) for r in get_db().execute('SELECT e.*,p.title FROM activity_events e LEFT JOIN problems p ON e.problem_id=p.id ORDER BY at')]
     for offset in range(19):days[(date(2026,10,15)+timedelta(days=offset)).isoformat()]=dict(baseline=[],current=[],activity=[])
@@ -289,7 +425,10 @@ def progress():
     items=s.rows();concepts=[dict(r) for r in get_db().execute('SELECT id,name FROM concepts ORDER BY display_order')]
     for c in concepts:
         subset=[p for p in items if p['concept_id']==c['id']];c.update(s.counts(subset));c['total']=len(subset)
-    return render_template('progress.html',counts=s.counts(items),concepts=concepts,done=s.new_today(items),pace=s.pace(items,date(2026,10,27)),fallback=s.pace(items,date(2026,11,1)),due=sum(bool(p['next_due_date'] and p['next_due_date']<=s.today().isoformat()) for p in items))
+    counts=s.counts(items);due=sum(bool(p['next_due_date'] and p['next_due_date']<=s.today().isoformat()) for p in s.rows(include_archived=True))
+    if items and 'assessment' in items[0]:
+        return render_template('progress_v2.html',counts=counts,concepts=concepts,due=due,items=items)
+    return render_template('progress.html',counts=counts,concepts=concepts,done=s.new_today(items),pace=s.pace(items,date(2026,10,27)),fallback=s.pace(items,date(2026,11,1)),due=due)
 
 @bp.route('/reschedule',methods=['POST'])
 def reschedule():

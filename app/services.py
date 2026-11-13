@@ -1,9 +1,10 @@
 import json
 import math
+import secrets
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from flask import current_app
-from .db import get_db
+from .db import get_db, is_postgres
 
 STATUSES = {'not_started':'Not Started','attempted':'Attempted','hints':'Solved With Hints','understood':'Understood','needs_review':'Needs Review'}
 
@@ -29,8 +30,27 @@ def valid_date(value):
     except (ValueError, TypeError):
         raise ValueError('Enter a valid date between 2020 and 2100.') from None
 
-def rows():
-    return [dict(r) for r in get_db().execute('''SELECT p.*, g.status,g.first_attempt_at,g.first_understood_at,g.mastered,
+def rows(include_archived=False):
+    db=get_db()
+    from . import plans
+    if plans.ready(db):
+        items=plans.active_rows(db)
+        if include_archived:items += plans.archived_rows(db)
+        curriculum=plans.load();positions={e['problem_id']:e['tracker_number'] for e in curriculum['entries']}
+        assessments=plans.latest_assessments(db)
+        for p in items:
+            p['tracker_number']=positions.get(p['id'])
+            p['learning_order']=positions.get(p['id']) or (1000+(p.get('learning_order') or 0))
+            p['historical_status']=p['status'];p['historical_mastered']=p['mastered']
+            a=assessments.get(p['id'])
+            p['assessment']=a['assessment'] if a else 'not_assessed'
+            p['assessment_at']=a['at'] if a else None
+            p['assessment_takeaway']=a['takeaway'] if a else ''
+            p['green_attested']=bool(a['green_attested']) if a else False
+            p['mastered']=bool(a and a['assessment']=='green')
+            p['archived']=p['id'] in curriculum['archived_ids']
+        return items
+    return [dict(r) for r in db.execute('''SELECT p.*, g.status,g.first_attempt_at,g.first_understood_at,g.mastered,
         a.baseline_date,a.scheduled_date,a.manual_override,n.takeaway,n.approach,n.confidence,n.effort,
         c.name AS concept_name,r.next_due_date,r.stage
         FROM problems p JOIN progress g ON p.id=g.problem_id JOIN assignments a ON p.id=a.problem_id
@@ -38,6 +58,13 @@ def rows():
         LEFT JOIN review_state r ON p.id=r.problem_id ORDER BY p.learning_order,p.grind_rank,p.id''')]
 
 def counts(items):
+    if items and 'assessment' in items[0]:
+        colors=[p.get('assessment','not_assessed') for p in items]
+        green=colors.count('green');yellow=colors.count('yellow');red=colors.count('red');unassessed=colors.count('not_assessed')
+        return dict(attempted=sum(p['first_attempt_at'] is not None for p in items),understood=green,
+            mastered=green,needs_review=yellow+red,ever_understood=sum(p['first_understood_at'] is not None for p in items),
+            green=green,yellow=yellow,red=red,not_assessed=unassessed,
+            historical_mastered=sum(bool(p.get('historical_mastered')) for p in items))
     return dict(attempted=sum(p['first_attempt_at'] is not None for p in items), understood=sum(p['status']=='understood' for p in items), mastered=sum(p['mastered'] for p in items), needs_review=sum(p['status']=='needs_review' for p in items), ever_understood=sum(p['first_understood_at'] is not None for p in items))
 
 def pace(items, target):
@@ -168,6 +195,67 @@ def catch_up(token,reset=False):
         event(db,token,None,'catch_up',dict(reset=reset,changes=changes))
 
 
+def assessment(pid, color, green_attested, takeaway, token, context='first_pass'):
+    """Record an explicit Green/Yellow/Red outcome without rewriting legacy mastery."""
+    if color not in ('green','yellow','red') or type(green_attested) is not bool:
+        raise ValueError('Choose Green, Yellow, or Red and confirm the Green criteria when applicable.')
+    if color=='green' and not green_attested:
+        raise ValueError('Green requires confirmation of an independent correct solve and an explanation of reasoning and complexity.')
+    if color!='green' and green_attested:
+        raise ValueError('The Green confirmation applies only to a Green assessment.')
+    if not isinstance(takeaway,str) or len(takeaway)>1000 or '\x00' in takeaway:
+        raise ValueError('The optional takeaway must be at most 1,000 characters.')
+    if context not in ('first_pass','review'):
+        raise ValueError('Invalid assessment context.')
+    db=get_db()
+    with db:
+        if not is_postgres(db):db.execute('BEGIN IMMEDIATE')
+        if not begin(db,token):return
+        progress=db.execute('SELECT first_attempt_at FROM progress WHERE problem_id=?',(pid,)).fetchone()
+        if progress is None:raise ValueError('Unknown problem.')
+        if context=='review' and not progress['first_attempt_at']:
+            raise ValueError('Record an initial attempt before a review.')
+        at=stamp()
+        if context=='first_pass' and not progress['first_attempt_at']:
+            db.execute('UPDATE progress SET first_attempt_at=? WHERE problem_id=?',(at,pid))
+        if context=='review':
+            state=db.execute('SELECT stage FROM review_state WHERE problem_id=?',(pid,)).fetchone()
+            stage=state['stage'] if state else 0
+            if color=='green':
+                stage=min(3,stage+1)
+                due=(today()+timedelta(days=3 if stage==1 else 7)).isoformat() if stage<3 else None
+                result='independent'
+            else:
+                stage=0;due=(today()+timedelta(days=1)).isoformat()
+                result='hints' if color=='yellow' else 'failed'
+            db.execute('INSERT INTO review_state VALUES(?,?,?,?) ON CONFLICT(problem_id) DO UPDATE SET stage=excluded.stage,next_due_date=excluded.next_due_date,last_result=excluded.last_result',(pid,stage,due,result))
+            db.execute('INSERT INTO review_events VALUES(?,?,?,?,?)',(token,pid,at,result,takeaway))
+        else:
+            # Initial assessment begins (or restarts) the established 1/3/7-day sequence.
+            db.execute('INSERT INTO review_state VALUES(?,0,?,NULL) ON CONFLICT(problem_id) DO UPDATE SET stage=0,next_due_date=excluded.next_due_date,last_result=NULL',(pid,(today()+timedelta(days=1)).isoformat()))
+        db.execute('INSERT INTO assessment_events(id,problem_id,assessment,green_attested,takeaway,at,context) VALUES(?,?,?,?,?,?,?)',
+            (secrets.token_hex(16),pid,color,int(green_attested),takeaway,at,context))
+        event(db,token,pid,'assessment',dict(assessment=color,green_attested=green_attested,context=context))
+
+
+def advance_active_day(token):
+    """Advance only after all five current-day problems have actual attempt records."""
+    from . import plans
+    db=get_db()
+    with db:
+        if not is_postgres(db):db.execute('BEGIN IMMEDIATE')
+        if not begin(db,token):return plans.current_day(db)
+        day=plans.current_day(db)
+        if not plans.day_complete(day,db):
+            raise ValueError('Finish the five first-pass attempts on this study day before advancing.')
+        following=plans.next_active_day(day)
+        if following is None:
+            return day
+        db.execute("UPDATE settings SET value=? WHERE key='active_study_day'",(str(following),))
+        event(db,token,None,'plan_advance',dict(from_day=day,to_day=following))
+        return following
+
+
 def activity_description(event_row):
     """Render stored history as study language, keeping payload details in backups."""
     payload=json.loads(event_row['payload'])
@@ -185,6 +273,8 @@ def activity_description(event_row):
     if kind=='reveal':return 'Problem guide deliberately revealed'
     if kind=='review_schedule':return 'Review scheduled: '+str(payload.get('date',''))
     if kind=='catch_up':return 'Catch-up schedule saved'
+    if kind=='plan_advance':return 'Active study day advanced: '+str(payload.get('from_day',''))+' → '+str(payload.get('to_day',''))
+    if kind=='assessment':return 'Learning assessment recorded: '+str(payload.get('assessment','')).title()
     if kind=='concept_note':return 'Concept note saved'
     if kind in ('learning_record_edit','learning_record_import'):
         return 'Personal learning record saved ('+', '.join(payload.get('fields',[]))+')'

@@ -1,0 +1,65 @@
+{
+  "group-anagrams": {
+    "clue": "Group strings that are equivalent after their characters are rearranged.",
+    "baseline": "For each word, compare it with every existing group representative; repeated character sorting can make this O(n²·k log k) time.",
+    "bottleneck": "The same anagram relationship is rediscovered for many pairs.",
+    "optimal": "Build a canonical key for each word, such as its 26-letter frequency tuple, and append the word to that key's group. The key represents the multiset of characters independent of order.",
+    "complexity": "O(n·k) time and O(n·k) extra space for lowercase English letters, counting grouped words and keys.",
+    "edge": "The statement restricts input to lowercase English letters; an alphabet-independent key can sort each word at O(k log k) cost.",
+    "takeaway": "Choose a canonical signature for the property that defines group membership."
+  },
+  "subarray-sum-equals-k": {
+    "clue": "Count contiguous ranges whose sum equals a target, especially when values may be negative.",
+    "baseline": "Choose every start index and extend the end while accumulating a running sum: O(n²) time and O(1) extra space.",
+    "bottleneck": "Every candidate range recomputes a relationship between two prefix positions.",
+    "optimal": "At running prefix sum s, count earlier prefixes equal to s-k. Store prefix-sum frequencies, beginning with prefix 0 occurring once; this counts all matching earlier boundaries, including duplicates.",
+    "complexity": "Expected O(n) time and O(n) extra space.",
+    "edge": "Negative values prevent a simple sliding-window shrink rule; seed the frequency map with {0: 1} to count ranges starting at index 0.",
+    "takeaway": "Turn a range sum into a difference between two prefix sums."
+  },
+  "longest-repeating-character-replacement": {
+    "clue": "Find the longest substring that can become one repeated character after at most k edits.",
+    "baseline": "Check every substring while maintaining its letter counts and whether length minus the most common count is at most k: O(n²) time, O(1) extra space for the fixed alphabet.",
+    "bottleneck": "Each start position explores many overlapping windows.",
+    "optimal": "Slide a window and track its most frequent letter. If window length minus that count exceeds k, move the left boundary. The largest valid window seen is the answer.",
+    "complexity": "O(n) time and O(1) extra space because the alphabet has 26 uppercase letters.",
+    "edge": "A nondecreasing historical maximum frequency is sufficient for this length-only result; the retained window may be temporarily stale but cannot inflate the maximum beyond a realizable earlier window.",
+    "takeaway": "A window is repairable when all non-majority characters fit within the edit budget."
+  },
+  "daily-temperatures": {
+    "clue": "For each position, find the distance to its next strictly greater value.",
+    "baseline": "Scan rightward from each day until finding a warmer temperature: O(n²) time and O(1) extra space besides the answer.",
+    "bottleneck": "The same future temperatures are checked repeatedly for unresolved days.",
+    "optimal": "Keep indices of unresolved days in a decreasing-temperature stack. A warmer current day resolves and removes every cooler stack top; store the index difference.",
+    "complexity": "O(n) time and O(n) auxiliary space for the monotonic stack, plus the required output array.",
+    "edge": "Pop only strictly cooler temperatures; equal readings are not warmer. Unresolved indices retain the answer's default zero.",
+    "takeaway": "A monotonic stack keeps only unresolved candidates for the next greater element."
+  },
+  "search-a-2d-matrix": {
+    "clue": "Search a row-wise sorted matrix whose rows continue one globally sorted sequence.",
+    "baseline": "Inspect each cell until the target is found: O(m·n) time and O(1) extra space.",
+    "bottleneck": "The row boundaries already establish a total order, but linear scan ignores it.",
+    "optimal": "Treat the matrix as a flattened sorted array. Binary-search a virtual index and map it to row = index // n and column = index % n.",
+    "complexity": "O(log(m·n)) time and O(1) extra space.",
+    "edge": "Use the number of columns for the virtual-index mapping and guard empty dimensions if the surrounding API permits them.",
+    "takeaway": "Exploit global order by searching virtual indices without allocating a flattened copy."
+  },
+  "remove-nth-node-from-end-of-list": {
+    "clue": "Remove a node by distance from the tail without needing random access.",
+    "baseline": "Count the list length, then walk again to the predecessor: O(n) time and O(1) extra space.",
+    "bottleneck": "A second traversal is needed because the target is measured from the end.",
+    "optimal": "Use a dummy node and two pointers separated by n links. Move both until the fast pointer reaches the tail, then bypass the target through the slow pointer.",
+    "complexity": "O(n) time and O(1) extra space.",
+    "edge": "The dummy predecessor handles removing the head when n equals the list length.",
+    "takeaway": "A fixed pointer gap converts distance-from-end into a single forward pass."
+  },
+  "house-robber": {
+    "clue": "Choose non-adjacent values to maximize a sum along a line.",
+    "baseline": "Recursively branch on taking or skipping each house: O(2ⁿ) time and O(n) recursion depth.",
+    "bottleneck": "Many branches solve the same suffix subproblem.",
+    "optimal": "For each house, compare skipping it with taking it plus the best value two houses back. Keep only the previous two best totals.",
+    "complexity": "O(n) time and O(1) extra space.",
+    "edge": "Initialize the rolling totals to zero so empty and one-house inputs work without special indexing errors.",
+    "takeaway": "When each choice blocks the adjacent choice, compare take-plus-two-back with skip."
+  }
+}

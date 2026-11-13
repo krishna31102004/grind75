@@ -130,3 +130,14 @@ document.querySelectorAll('.solution-disclosure').forEach(details => {
     details.querySelector('[data-solution-label]').textContent = details.open ? 'Hide Python reference solution' : 'Reveal Python reference solution';
   });
 });
+
+document.querySelectorAll('form').forEach(form => {
+  const assessmentSelect=form.querySelector('select[name="assessment"]');
+  const greenAttestation=form.querySelector('[data-green-attestation]');
+  if (!assessmentSelect || !greenAttestation) return;
+  const syncGreenAttestation=()=>{
+    greenAttestation.required=assessmentSelect.value==='green';
+    greenAttestation.closest('label').classList.toggle('attestation-required',greenAttestation.required);
+  };
+  assessmentSelect.addEventListener('change',syncGreenAttestation);syncGreenAttestation();
+});

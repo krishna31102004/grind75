@@ -13,6 +13,42 @@ context_bp=Blueprint('context',__name__)
 
 def snapshot():
     items=s.rows();day=s.today().isoformat();db=get_db()
+    from . import plans
+    if plans.ready(db):
+        curriculum=plans.load();current=plans.current_day(db)
+        current_config=next(d for d in curriculum['days'] if d['day']==current)
+        all_assessments=plans.latest_assessments(db)
+        def public_question(p):
+            assessment=all_assessments.get(p['id'],{}).get('assessment','not_assessed')
+            return dict(id=p['id'],learning_order=p.get('tracker_number'),title=p['title'],url=p['url'],
+                tracker_path=url_for('main.problem',pid=p['id']),concept=p['concept_name'],status=assessment.replace('_',' ').title(),
+                assessment=assessment,attempted=bool(p['first_attempt_at']),first_attempt_date=s.local_day(p['first_attempt_at']),
+                understood=assessment=='green',independently_mastered=assessment=='green',required_hints=assessment=='yellow',
+                needs_review=assessment in ('yellow','red'),review_due=p['next_due_date'],study_day=p.get('day_number'))
+        lookup={p['id']:public_question(p) for p in items}
+        today_rows=plans.entries_for_day(current,db) if current_config['kind']=='active' else []
+        next_rows=[p for p in today_rows if not p['curriculum_attempted']]
+        upcoming=[]
+        for config in curriculum['days']:
+            if (config.get('active_index') or 0)>(current_config.get('active_index') or 0):
+                upcoming.extend(plans.entries_for_day(config['day'],db))
+        archived=[p for p in plans.archived_rows(db) if not p['first_attempt_at']]
+        questions=list(lookup.values())
+        concepts=[]
+        for cid in dict.fromkeys(p['concept_id'] for p in items):
+            group=[p for p in items if p['concept_id']==cid]
+            weak=sum(lookup[p['id']]['needs_review'] for p in group)
+            concepts.append(dict(name=group[0]['concept_name'],total=len(group),**s.counts(group),weak=weak))
+        due=sorted([p for p in questions if p['review_due'] and p['review_due']<=day],key=lambda p:(p['review_due'],p['learning_order'] or 0))
+        return dict(date=day,timezone='America/Chicago',daily_target=5,total=75,versioned_plan=True,
+            curriculum_focus=dict(current_active_day=current,current_topic=current_config['topic'],anchor='explicit active-day state'),
+            counts=s.counts(items),new_attempts_today=sum(bool(p['curriculum_attempted']) for p in today_rows),
+            today_assignments=[lookup[p['id']] for p in today_rows],next_questions=[lookup[p['id']] for p in next_rows],
+            upcoming_questions=[public_question(p) for p in upcoming if not p['curriculum_attempted']][:15],
+            attempted_questions=[p for p in questions if p['attempted']],understood_questions=[p for p in questions if p['understood']],
+            mastered_questions=[p for p in questions if p['independently_mastered']],hinted_questions=[p for p in questions if p['required_hints']],
+            weak_concepts=[c for c in concepts if c['weak']],concepts=concepts,reviews_due=due,
+            overdue_reviews=[p for p in due if p['review_due']<day],earlier_unfinished=[public_question(p) for p in archived])
     hinted=set()
     for event in db.execute("SELECT problem_id,kind,payload FROM activity_events WHERE kind IN ('status','review')"):
         payload=json.loads(event['payload'])
@@ -62,7 +98,8 @@ def render_context(shared=False,one_time_url=None):
     data=snapshot()
     if request.args.get('format')=='json' and request.method=='GET':
         return jsonify(data)
-    return render_template('study_context.html',data=data,shared=shared,sharing_enabled=False if shared else enabled(),one_time_url=one_time_url)
+    template='study_context_v2.html' if data.get('versioned_plan') else 'study_context.html'
+    return render_template(template,data=data,shared=shared,sharing_enabled=False if shared else enabled(),one_time_url=one_time_url)
 
 
 @context_bp.route('/study-context')

@@ -1,3 +1,32 @@
+# 15-active-day curriculum and UI redesign — November 12, 2026
+
+## Current checkpoint
+
+- Work branch: `codex/15-day-curriculum-ui-ux-redesign`, created from `main` at `5dc502f4e141b04bfecbb39aa133c50bae086e28`; remote `main` matched at start. Latest remote state is checked again before feature-branch push.
+- Scope: exact 75-question, 15-active-day curriculum; archive replaced identities; preserve attached records; simplify Today/Plan/Review/Library/Progress/More and problem assessment; do not migrate or write production data, merge to `main`, or deploy.
+- Audit read: `/Users/kb4086/Downloads/GRIND75_UI_UX_AUDIT.md` (November 12, 2026). Its source-based findings are the starting point; the visual-inspection gap will be covered with synthetic local browser runs.
+- Baseline command with database environment variables removed: `env -u DATABASE_URL -u DATABASE_URL_UNPOOLED -u TEST_DATABASE_URL .venv/bin/python -m pytest -q` — **168 passed, 51 skipped** in 9.67s. Skips are optional PostgreSQL integration cases because no disposable `TEST_DATABASE_URL` was configured.
+- Implemented: exact 75 mapping, 15×5 active days and six flex days, explicit active-day advance, seven stable replacement IDs, archived old questions, new Green/Yellow/Red assessments, simplified Today/Plan/Review/Library/Progress/More, and curriculum v5 migration/backup support. No app/data schema is changed automatically on startup.
+- Data reviewer final findings: blocked unsafe legacy v1–v3 restore when v5 assessment history exists; tightened backup/schema validation so only Green may carry attestation. Regression coverage added. Final rerun pending.
+- UI reviewer final findings: weak-assessment links now enter recall context; day labels distinguish calendar day from active-session count; Library tabs wrap at 320px. Final synthetic walkthrough reported no overflow or JavaScript errors at 1440/768/390/320 in light and dark themes.
+- Final full command: `env -u DATABASE_URL -u DATABASE_URL_UNPOOLED TEST_DATABASE_URL='postgresql://postgres@127.0.0.1:55440/postgres' .venv/bin/python -m pytest -q` — **232 passed, 0 failed, 0 skipped** in 22.47s, using temporary SQLite fixtures and a disposable UTF-8 PostgreSQL cluster. A preceding run caught a test-placement error (not a product defect); it was corrected before this passing run.
+- Final synthetic browser command: `env -u DATABASE_URL -u DATABASE_URL_UNPOOLED python3 scripts/check_curriculum_ui.py /tmp/grind75-curriculum-final-v2` — passed. It exercised the day workflow, five attempts and explicit advance, exact CRLF record preservation, spoiler unlock, solution copy, route availability, review context, Day 8 labels, and 320px Library/Concepts/Learning Records in both themes. 1440/768/390/320 light/dark checks reported no horizontal overflow or JS errors. Screenshots are under `/tmp/grind75-curriculum-final-v2` (synthetic data only).
+- Reviewer A final: focused SQLite suite **65 passed, 20 optional PG tests skipped** in 2.91s; no remaining migration/backup blocker. Its legacy restore concern is prevented by rejecting v1–v3 restore when v5 assessment evidence exists; Green attestation consistency is checked in both DB schema and backup validation. Full disposable-PG suite also passed above.
+- Reviewer B final: full synthetic workflow and responsive checks passed after fixes. Weak Yellow/Red links now open recall context; plan labels show calendar day separately from active session; library tabs wrap at 320px. No remaining UI findings.
+- Production migration, production DB access, merge to `main`, and Vercel deployment: **not performed**. Release steps are in [CURRICULUM_V2_RELEASE.md](CURRICULUM_V2_RELEASE.md); migration5 remains behind explicit production approval.
+
+## Batches
+
+1. Curriculum model, archival and safe explicit migration — implemented; full isolated verification in progress.
+2. Today, Plan and primary navigation — implemented and browser-checked.
+3. Problem assessment and Review — implemented; reviewer edge cases fixed.
+4. Library, Progress and More — implemented and browser-checked.
+5. Responsive/accessibility polish, full tests, reviewer closeout and feature-branch release — final regression and Git verification in progress.
+
+No production migration, production data write, merge to `main`, Vercel deployment, or live form action has been performed. Git commit/push verification is the only remaining task checkpoint.
+
+---
+
 # Implementation progress
 
 Project: `/Users/kb4086/Projects/grind75-tracker`. Current checkpoint: owner-authorized reference-solutions migration4 completed, approved implementation pushed to main and Vercel Production Ready; all original database values preserved. Public and authenticated live checks pass; the reference-solutions release is fully verified. Earlier checkpoints below preserve their historical results and approval gates.

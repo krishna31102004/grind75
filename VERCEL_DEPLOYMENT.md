@@ -1,5 +1,7 @@
 # Deploy Grind 75 to Vercel with Neon
 
+> **Current release status — November 12, 2026:** The 15-active-day curriculum/UI update is on the feature branch `codex/15-day-curriculum-ui-ux-redesign`. It has not been migrated to production, merged to `main`, or deployed. The explicit additive migration5 is pending a separately approved production operation. Follow [CURRICULUM_V2_RELEASE.md](CURRICULUM_V2_RELEASE.md) for that release; do not run migration5 until the production backup, dry-run, and owner approval gates are complete. The October21 reference-solutions release below is historical and remains completed.
+
 Updated October21,2026. The existing production tracker and curriculum release are recorded in PROGRESS.md. The original setup/v3 procedures below are historical instructions for a new isolated installation, **not commands to rerun against existing production**. Python reference solutions were released under owner authorization on October21,2026: migration4 verified, existing learning records preserved, and Vercel Production Ready. See PROGRESS.md for actual evidence; do not rerun completed migrations. Follow [REFERENCE_SOLUTIONS_RELEASE.md](REFERENCE_SOLUTIONS_RELEASE.md).
 
 ## 1. Prepare credentials on this Mac
@@ -99,7 +101,7 @@ Keep secret variables server-side in Vercel Settings → Environment Variables. 
 
 Open the actual production URL assigned by Vercel. Anonymous private pages redirect to `/login`; use the setup username/password. Sessions use HttpOnly, Secure, SameSite=Strict cookies in production. Writes, export/import and safety backups require authentication; writes also require CSRF tokens. Failed logins are throttled persistently per client for15 minutes after8 failures.
 
-Open **Study Context** in navigation (`/study-context`). It reads live database records and shows the Chicago date, today's assignments, upcoming work, attempted/currently understood/independently mastered counts, hint history, weak topics, due reviews and November2 readiness milestones. A JSON link exposes the same restricted facts to your authenticated session.
+Open **Study Context** in navigation (`/study-context`). It reads live database records and summarizes current-day assignments, active-day position, assessment counts, weak topics, and due reviews. A JSON link exposes the same restricted, non-private facts to your authenticated session. The curriculum v2 view replaces expired calendar milestones with explicit day progression.
 
 Sharing starts disabled. Click **Enable sharing & generate link**, copy the full URL immediately, and paste it into your DSA conversation with an explicit request such as:
 

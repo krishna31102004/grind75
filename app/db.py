@@ -66,7 +66,10 @@ def initialize_sqlite(db):
     if len(baseline_order) != 75 or len(set(baseline_order)) != 75:
         raise RuntimeError('Invalid frozen baseline assignment inventory.')
     expected = {p['id'] for p in problems}
-    if existing and existing != expected:
+    from .plans import ADDITIONS_PATH
+    approved_additions = {p['id'] for p in json.loads(ADDITIONS_PATH.read_text(encoding='utf-8'))}
+    allowed = (expected, expected | approved_additions)
+    if existing and existing not in allowed:
         raise RuntimeError('Dataset identities changed; refusing to modify personal progress.')
     with db:
         for c in concepts:

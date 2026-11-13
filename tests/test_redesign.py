@@ -112,7 +112,7 @@ def test_sidebar_active_destination_and_no_broken_legacy_feature_link(client,app
     assert 'href="/learning-records"' not in page
     prepare(app,client)
     page=client.get('/learning-records/import').text
-    assert 'href="/learning-records" aria-current="page"' in page
+    assert 'href="/library" aria-current="page"' in page
     assert 'aria-current="step"' in page
 
 

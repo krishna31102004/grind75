@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import problem_rows with context %}
+{% block title %}Library{% endblock %}
+{% block body %}
+<header class="page-heading"><div><p class="eyebrow">Problems · Concepts · Learning Records</p><h1>Library</h1><p class="lede">Find a problem or return to the patterns and notes you have saved.</p></div></header>
+{% include 'library_nav.html' %}
+<form method="get" class="library-filters"><label>Search problems<input type="search" name="q" value="{{query}}" placeholder="Title or concept"></label><label>Difficulty<select name="difficulty"><option value="">All</option>{% for x in ['Easy','Medium','Hard'] %}<option {% if difficulty==x %}selected{% endif %}>{{x}}</option>{% endfor %}</select></label><label>Assessment<select name="assessment"><option value="">All</option>{% for x in ['green','yellow','red','not_assessed'] %}<option value="{{x}}" {% if assessment==x %}selected{% endif %}>{{x.replace('_',' ')|title}}</option>{% endfor %}</select></label><label class="check"><input type="checkbox" name="due" value="1" {% if request.args.get('due')=='1' %}checked{% endif %}> Due review</label><label class="check"><input type="checkbox" name="saved" value="1" {% if request.args.get('saved')=='1' %}checked{% endif %}> Saved learning record</label><label class="check"><input type="checkbox" name="archived" value="1" {% if request.args.get('archived')=='1' %}checked{% endif %}> Include archived</label><button>Filter</button><a href="{{url_for('main.library')}}">Clear</a></form>
+<p class="filter-result">{{items|length}} {{'catalog' if request.args.get('archived')=='1' else 'active curriculum'}} problems</p>{{problem_rows(items)}}
+{% endblock %}

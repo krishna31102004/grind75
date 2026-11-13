@@ -73,3 +73,7 @@ class PostgresDB(AbstractContextManager):
 
     def close(self):
         self.connection.close()
+
+    @property
+    def in_transaction(self):
+        return bool(self._transactions)
