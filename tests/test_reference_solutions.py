@@ -289,7 +289,8 @@ def test_pg_additive_eleven_records_and_operator(pg_url, tmp_path, monkeypatch, 
     archive.chmod(0o600)
     receipt=tmp_path/'receipt.json'
     monkeypatch.setenv('DATABASE_URL_UNPOOLED',pg_url)
-    args=['migrate_reference_solutions.py','--postgres','--expected-host','127.0.0.1','--expected-database','postgres','--backup',str(archive)]
+    from urllib.parse import urlsplit
+    args=['migrate_reference_solutions.py','--postgres','--expected-host','127.0.0.1','--expected-database',urlsplit(pg_url).path.lstrip('/'),'--backup',str(archive)]
     monkeypatch.setattr(sys,'argv',args+['--check-only']);ops.main()
     db=connect(pg_url);assert state(db)==before;db.close()
     monkeypatch.setattr(sys,'argv',args+['--apply','--acknowledge-postgres-backup','--receipt',str(receipt)]);ops.main()
