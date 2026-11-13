@@ -20,7 +20,7 @@ from app.db import connect
 from app import reference_solutions as ref
 from app.learning_records import migration_ready
 from scripts.migrate_learning_records import direct_database_url,inspect_postgres,preflight_error_message,backup_sqlite
-from scripts.reorder_curriculum import verify_backup
+from scripts.reorder_curriculum import verify_backup, nonempty_tables
 from app.curriculum import tables
 
 
@@ -51,7 +51,10 @@ def main():
             if a.apply and (not a.backup or not a.acknowledge_postgres_backup):raise ValueError('Apply requires a fresh verified --backup and --acknowledge-postgres-backup.')
             db=connect(url)
             if db.execute('SELECT current_database()').fetchone()[0]!=a.expected_database:raise ValueError('Connected database target mismatch.')
-            if a.backup:backup_hash=verify_backup(a.backup,a.expected_database,tables(db))
+            if a.backup:
+                schema=db.execute('SELECT current_schema()').fetchone()[0]
+                table_names=tables(db)
+                backup_hash=verify_backup(a.backup,a.expected_database,table_names,nonempty_tables(db,table_names,schema),schema)
         else:
             path=Path(a.sqlite).expanduser().resolve()
             if not path.is_file():raise ValueError('Explicit existing SQLite file required; no database initialized.')

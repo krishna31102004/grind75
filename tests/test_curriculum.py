@@ -182,9 +182,10 @@ def test_private_backup_validation(tmp_path,monkeypatch):
     from types import SimpleNamespace
     from scripts.reorder_curriculum import verify_backup
     path=tmp_path/'synthetic.dump';path.write_bytes(b'synthetic archive');path.chmod(0o600)
-    listing='; dbname: expected\n1; 0 1 TABLE DATA public problems owner\n2; 0 2 TABLE DATA public progress owner\n'
+    listing='; dbname: expected\n1; 0 1 TABLE public problems owner\n2; 0 2 TABLE public progress owner\n3; 0 3 TABLE public empty_table owner\n4; 0 4 TABLE public learning_records owner\n5; 0 1 TABLE DATA public problems owner\n6; 0 2 TABLE DATA public progress owner\n'
     monkeypatch.setattr(subprocess,'run',lambda *a,**k:SimpleNamespace(returncode=0,stdout=listing))
     assert len(verify_backup(path,'expected',['problems','progress']))==64
+    assert len(verify_backup(path,'expected',['problems','progress','empty_table'],['problems','progress']))==64
     with pytest.raises(ValueError,match='database name'):verify_backup(path,'wrong',['problems'])
     with pytest.raises(ValueError,match='table-data'):verify_backup(path,'expected',['learning_records'])
     os.utime(path,(time.time()-90000,time.time()-90000))

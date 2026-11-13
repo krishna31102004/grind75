@@ -29,7 +29,19 @@ def private_json(path, value):
         json.dump(value, stream, indent=2); stream.write('\n')
 
 
-def verify_backup(path, expected_database, expected_tables):
+def nonempty_tables(db, tables, schema=None):
+    """List the expected tables containing rows in the current PostgreSQL schema."""
+    schema = schema or db.execute('SELECT current_schema()').fetchone()[0]
+    qschema = schema.replace('"', '""')
+    result = []
+    for table in tables:
+        qtable = table.replace('"', '""')
+        if db.execute(f'SELECT EXISTS (SELECT 1 FROM "{qschema}"."{qtable}" LIMIT 1)').fetchone()[0]:
+            result.append(table)
+    return result
+
+
+def verify_backup(path, expected_database, expected_tables, expected_data_tables=None, expected_schema='public'):
     path = Path(path).expanduser()
     if not path.is_file() or not path.stat().st_size or path.stat().st_mode & 0o077:
         raise ValueError('Backup must be a nonempty private file (mode600).')
@@ -40,9 +52,20 @@ def verify_backup(path, expected_database, expected_tables):
     if result.returncode or not any(line and not line.startswith(';') for line in result.stdout.splitlines()):
         raise ValueError('Backup archive-list verification failed; details omitted.')
     database = re.search(r'^;\s*dbname:\s*(.+?)\s*$', result.stdout, re.MULTILINE)
-    archived_tables = set(re.findall(r'\bTABLE DATA \S+ (\S+)', result.stdout))
-    if not database or database.group(1) != expected_database or not set(expected_tables) <= archived_tables:
-        raise ValueError('Backup database name or required table-data entries do not match this target.')
+    # pg_dump omits TABLE DATA entries for empty tables. Require a schema entry
+    # for every expected table and data entries only for tables that currently
+    # contain rows; otherwise a valid archive is rejected on empty tables.
+    schema_pattern = re.escape(expected_schema)
+    archived_tables = set(re.findall(rf'\bTABLE {schema_pattern} (\S+)', result.stdout))
+    archived_data = set(re.findall(rf'\bTABLE DATA {schema_pattern} (\S+)', result.stdout))
+    expected_tables = set(expected_tables)
+    expected_data_tables = set(expected_tables if expected_data_tables is None else expected_data_tables)
+    if not database or database.group(1) != expected_database:
+        raise ValueError('Backup database name does not match this target.')
+    if not expected_tables <= archived_tables:
+        raise ValueError('Backup is missing required table schema entries.')
+    if not expected_data_tables <= archived_data:
+        raise ValueError('Backup is missing required table-data entries for nonempty tables.')
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -82,7 +105,8 @@ def main():
             actual = db.execute('SELECT current_database()').fetchone()[0]
             if actual != args.expected_database: raise ValueError('Connected database does not match the expected target.')
             if args.backup:
-                backup_sha = verify_backup(args.backup, actual, curriculum.tables(db))
+                tables = curriculum.tables(db)
+                backup_sha = verify_backup(args.backup, actual, tables, nonempty_tables(db, tables), db.execute('SELECT current_schema()').fetchone()[0])
                 print('Backup verified: age, private permissions, database and all table-data entries; sha256='+backup_sha)
         else:
             path = Path(args.sqlite).expanduser().resolve()

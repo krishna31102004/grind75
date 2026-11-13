@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from app import curriculum_migration as migration
 from app.db import connect, is_postgres
 from scripts.migrate_learning_records import direct_database_url, inspect_postgres, preflight_error_message, backup_sqlite
-from scripts.reorder_curriculum import verify_backup, private_json
+from scripts.reorder_curriculum import verify_backup, private_json, nonempty_tables
 
 
 def main():
@@ -64,7 +64,9 @@ def main():
                 if not args.backup or not args.acknowledge_production_update:
                     raise ValueError('PostgreSQL apply requires a fresh verified backup and explicit production-update acknowledgement.')
             if args.backup:
-                backup_sha = verify_backup(args.backup, args.expected_database, migration._tables(db))
+                tables = migration._tables(db)
+                schema = db.execute('SELECT current_schema()').fetchone()[0]
+                backup_sha = verify_backup(args.backup, args.expected_database, tables, nonempty_tables(db, tables, schema), schema)
         else:
             path = Path(args.sqlite).expanduser().resolve()
             if not path.is_file():
@@ -85,7 +87,9 @@ def main():
                 raise ValueError('Apply assignment date differs from the reviewed plan.')
             assignment_date = approved.get('assignment_date_for_new_questions')
             if args.postgres:
-                if verify_backup(args.backup, args.expected_database, migration._tables(db)) != backup_sha:
+                tables = migration._tables(db)
+                schema = db.execute('SELECT current_schema()').fetchone()[0]
+                if verify_backup(args.backup, args.expected_database, tables, nonempty_tables(db, tables, schema), schema) != backup_sha:
                     raise ValueError('Backup changed during preflight; no writes permitted.')
             receipt_path = Path(args.receipt).expanduser()
             with open(receipt_path, 'x', opener=lambda name, flags: os.open(name, flags, 0o600)) as receipt:
