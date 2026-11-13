@@ -46,6 +46,9 @@ class PostgresDB(AbstractContextManager):
             if options.get('sslmode', 'require') not in ('require', 'verify-ca', 'verify-full'):
                 raise ValueError('Remote PostgreSQL requires TLS (sslmode=require or stronger).')
             options.setdefault('sslmode', 'require')
+            if options['sslmode'] in ('verify-ca', 'verify-full') and options.get('sslrootcert', 'system') == 'system':
+                import certifi
+                options['sslrootcert'] = certifi.where()
         self.connection = psycopg.connect(**options, autocommit=True, connect_timeout=10)
         self._transactions = []
 
