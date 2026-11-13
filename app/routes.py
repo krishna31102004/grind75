@@ -50,7 +50,7 @@ def today():
             item['id']=item.get('problem_id',item.get('id'));item['tracker_number']=None
         earlier=[p for p in archived if not p['first_attempt_at']]
         return render_template('today_v2.html',day=day,items=items,attempted=attempted,next_problem=next_problem,
-            counts=counts,due=due,current_day=day_number,following=following,token=secrets.token_hex(20),csrf=csrf(),
+            counts=counts,due=due,current_day=day_number,following=following,token=secrets.token_hex(20),
             all_complete=day['active_index']==15 and attempted==5,earlier=earlier)
     items=s.rows();eligible=s.queue(items);done=s.new_today(items)
     limit=max(0,6-done)
@@ -85,7 +85,7 @@ def plan():
     return render_template('plan.html',days=days,day=day,items=items,attempted=attempted,current_day=current,
         can_advance=selected==current and attempted==5 and plans.next_active_day(current,curriculum) is not None,
         following=plans.next_active_day(current,curriculum),finished=selected==current and attempted==5 and day['active_index']==15,
-        token=secrets.token_hex(20),csrf=csrf())
+        token=secrets.token_hex(20))
 
 
 @bp.route('/plan/advance',methods=['POST'])

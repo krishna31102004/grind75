@@ -176,6 +176,21 @@ def test_today_plan_and_restart_use_explicit_active_day(applied_app):
     assert 'Basic hashing' in restarted.test_client().get('/').get_data(as_text=True)
 
 
+def test_authenticated_curriculum_pages_keep_csrf_helper_callable(applied_app):
+    from app.security import fingerprint
+    applied_app.config['AUTH_REQUIRED']=True
+    client=applied_app.test_client()
+    with applied_app.app_context():identity=fingerprint()
+    with client.session_transaction() as browser_session:
+        browser_session['identity']=identity
+        browser_session['csrf']='synthetic-csrf-token'
+    for path in ('/','/plan'):
+        response=client.get(path)
+        assert response.status_code==200
+        assert b'action="/logout"' in response.data
+        assert b'name="csrf" value="synthetic-csrf-token"' in response.data
+
+
 def test_assessments_require_green_attestation_and_do_not_rewrite_legacy_mastery(applied_app):
     from app import services as service
     from app.db import get_db
